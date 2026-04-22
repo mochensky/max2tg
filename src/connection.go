@@ -44,8 +44,10 @@ type Connection struct {
 	manualStop          bool
 	performingReconnect bool
 	reconnectLock       sync.Mutex
-	receiverDone        chan struct{}
-	mu                  sync.RWMutex
+	stopCh              chan struct{}
+	stopOnce            sync.Once
+
+	mu sync.RWMutex
 }
 
 func NewConnection(config *Config, client ClientHandler) *Connection {
@@ -58,8 +60,13 @@ func NewConnection(config *Config, client ClientHandler) *Connection {
 		responseFutures: make(map[int]chan WebSocketPayload),
 		currentDelay:    defaultReconnectDelay,
 		maxBackoffDelay: maxReconnectDelay,
-		receiverDone:    nil,
 	}
+}
+
+func (c *Connection) closeStopCh() {
+	c.stopOnce.Do(func() {
+		close(c.stopCh)
+	})
 }
 
 func (c *Connection) Connect() error {
@@ -101,15 +108,19 @@ func (c *Connection) Connect() error {
 
 	c.requestBuilder = NewRequestBuilder(c.config)
 
-	c.receiverDone = make(chan struct{})
-	go c.receiveMessages()
+	c.stopCh = make(chan struct{})
+	c.stopOnce = sync.Once{}
+
+	go c.receiveMessages(c.stopCh)
 
 	if err := c.sendInit(); err != nil {
+		c.closeStopCh()
 		conn.Close()
+		c.connected = false
 		return err
 	}
 
-	c.startPing()
+	c.startPing(c.stopCh)
 
 	Logf("Connected to WebSocket")
 	return nil
@@ -139,9 +150,12 @@ func (c *Connection) sendInit() error {
 
 func (c *Connection) receiveWithTimeout(timeout time.Duration) (WebSocketPayload, error) {
 	select {
-	case payload := <-c.messageQueue:
+	case payload, ok := <-c.messageQueue:
+		if !ok {
+			return nil, NewConnectionError("message queue closed")
+		}
 		return payload, nil
-	case <-c.receiverDone:
+	case <-c.stopCh:
 		return nil, NewConnectionError("receiver stopped")
 	case <-time.After(timeout):
 		return nil, NewTimeoutError("receive timeout")
@@ -184,64 +198,61 @@ func (c *Connection) Authenticate(chatsCount int) (WebSocketPayload, error) {
 	return response, nil
 }
 
-func (c *Connection) startPing() {
+func (c *Connection) startPing(stopCh <-chan struct{}) {
 	c.mu.Lock()
 	c.lastPongTime = time.Now()
 	c.mu.Unlock()
 
-	c.pingTicker = time.NewTicker(pingInterval)
-	done := c.receiverDone
+	ticker := time.NewTicker(pingInterval)
+	c.pingTicker = ticker
 
 	go func() {
-		<-done
-		c.pingTicker.Stop()
-	}()
-
-	go func() {
-		for range c.pingTicker.C {
-			if !c.connected {
-				break
-			}
-
-			c.mu.RLock()
-			lastPong := c.lastPongTime
-			c.mu.RUnlock()
-
-			if time.Since(lastPong) > c.config.PingTimeout {
-				Logf("Ping timeout: server did not respond for %v, initiating reconnect", time.Since(lastPong).Round(time.Second))
-				c.connected = false
-				if c.conn != nil {
-					c.conn.Close()
-				}
-				go c.HandleReconnect("Ping timeout: server stopped responding")
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
 				return
-			}
+			case <-ticker.C:
+				if !c.connected {
+					return
+				}
 
-			pingData := c.requestBuilder.Ping()
-			if err := c.send(pingData); err != nil {
-				Logf("Ping failed: %v", err)
-				break
+				c.mu.RLock()
+				lastPong := c.lastPongTime
+				c.mu.RUnlock()
+
+				if time.Since(lastPong) > c.config.PingTimeout {
+					Logf("Ping timeout: server did not respond for %v, initiating reconnect", time.Since(lastPong).Round(time.Second))
+					c.connected = false
+					if c.conn != nil {
+						c.conn.Close()
+					}
+					go c.HandleReconnect("Ping timeout: server stopped responding")
+					return
+				}
+
+				pingData := c.requestBuilder.Ping()
+				if err := c.send(pingData); err != nil {
+					Logf("Ping failed: %v", err)
+					return
+				}
 			}
 		}
 	}()
 }
 
-func (c *Connection) receiveMessages() {
-	done := c.receiverDone
-	defer close(done)
+func (c *Connection) receiveMessages(stopCh <-chan struct{}) {
+	defer c.closeStopCh()
 
-	for c.connected {
+	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if c.connected {
 				Logf("WebSocket read error: %v", err)
-				c.mu.Lock()
-				c.performingReconnect = false
-				c.mu.Unlock()
 				c.connected = false
 				go c.HandleReconnect("WebSocket connection closed")
 			}
-			break
+			return
 		}
 
 		Logf("↓ %s", string(message))
@@ -276,6 +287,8 @@ func (c *Connection) receiveMessages() {
 
 		select {
 		case c.messageQueue <- payload:
+		case <-stopCh:
+			return
 		default:
 			Logf("Message queue full, dropping message")
 		}
@@ -333,7 +346,10 @@ func (c *Connection) sendAndReceive(payload WebSocketPayload, timeout time.Durat
 	}
 
 	select {
-	case response := <-responseChan:
+	case response, ok := <-responseChan:
+		if !ok {
+			return nil, NewConnectionError("connection lost while waiting for response")
+		}
 		return response, nil
 	case <-time.After(timeout):
 		c.mu.Lock()
@@ -345,9 +361,12 @@ func (c *Connection) sendAndReceive(payload WebSocketPayload, timeout time.Durat
 
 func (c *Connection) Receive() (WebSocketPayload, error) {
 	select {
-	case payload := <-c.messageQueue:
+	case payload, ok := <-c.messageQueue:
+		if !ok {
+			return nil, NewConnectionError("message queue closed")
+		}
 		return payload, nil
-	case <-c.receiverDone:
+	case <-c.stopCh:
 		return nil, NewConnectionError("receiver stopped")
 	}
 }
@@ -405,18 +424,13 @@ func (c *Connection) HandleReconnect(reason string) {
 	if c.conn != nil {
 		c.conn.Close()
 	}
-
-	if c.pingTicker != nil {
-		c.pingTicker.Stop()
-	}
-
 	c.connected = false
 
 	for {
 		if err := c.Connect(); err != nil {
 			Logf("Reconnect failed: %v, retrying...", err)
-			delay := time.Duration(float64(c.currentDelay) * 1.5)
-			time.Sleep(delay)
+			retryDelay := time.Duration(float64(c.currentDelay) * 1.5)
+			time.Sleep(retryDelay)
 			continue
 		}
 
@@ -424,10 +438,11 @@ func (c *Connection) HandleReconnect(reason string) {
 			response, err := c.Authenticate(40)
 			if err != nil {
 				Logf("Authentication after reconnect failed: %v", err)
-				c.connected = false
+				c.closeStopCh()
 				if c.conn != nil {
 					c.conn.Close()
 				}
+				c.connected = false
 				time.Sleep(2 * time.Second)
 				continue
 			}
@@ -449,7 +464,9 @@ func (c *Connection) HandleReconnect(reason string) {
 		break
 	}
 
+	c.reconnectLock.Lock()
 	c.performingReconnect = false
+	c.reconnectLock.Unlock()
 }
 
 func castToMapArray(arr []interface{}) []map[string]interface{} {
@@ -463,20 +480,29 @@ func castToMapArray(arr []interface{}) []map[string]interface{} {
 }
 
 func (c *Connection) Close() {
+	c.reconnectLock.Lock()
 	c.manualStop = true
+	c.reconnectLock.Unlock()
+
+	if c.stopCh != nil {
+		c.closeStopCh()
+	}
 
 	if c.conn != nil && c.connected {
 		c.conn.Close()
-		c.connected = false
-		c.requestBuilder = NewRequestBuilder(c.config)
 	}
+	c.connected = false
+	c.requestBuilder = NewRequestBuilder(c.config)
 
 	if c.pingTicker != nil {
 		c.pingTicker.Stop()
 	}
 
-	close(c.messageQueue)
+	oldQueue := c.messageQueue
 	c.messageQueue = make(chan WebSocketPayload, 1000)
+	close(oldQueue)
+	for range oldQueue {
+	}
 
 	c.mu.Lock()
 	for seq, ch := range c.responseFutures {
