@@ -155,7 +155,8 @@ On successful start you will see in the logs:
 │   ├── parser.go          - WebSocket API response parsing
 │   ├── request_builder.go - request building
 │   ├── sender.go          - sending to Telegram
-│   └── utils.go           - media file downloading
+│   ├── utils.go           - media file downloading
+│   └── version.go         - working with versions
 └── main.go                - entry point, event handlers
 ```
 

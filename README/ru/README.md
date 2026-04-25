@@ -155,7 +155,8 @@ ping_timeout: 90s
 │   ├── parser.go          - парсинг ответов WebSocket API
 │   ├── request_builder.go - построение запросов
 │   ├── sender.go          - отправка в Telegram
-│   └── utils.go           - скачивание медиафайлов
+│   ├── utils.go           - скачивание медиафайлов
+│   └── version.go         - работа с версиями
 └──  main.go               - точка входа, обработчики событий
 
 ```
