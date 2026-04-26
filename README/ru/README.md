@@ -112,6 +112,9 @@ log_path: "data/logs"
 db_path: "data/database.db"
 download_path: "data/downloads"
 
+# часовой пояс для времени в логах (формат IANA, например, Europe/Moscow, America/New_York, UTC)
+log_timezone: "Europe/Moscow"
+
 # сколько последних сообщений в чате будет проверено на синхронизацию?
 sync_history_depth: 30
 

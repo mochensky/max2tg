@@ -112,19 +112,22 @@ log_path: "data/logs"
 db_path: "data/database.db"
 download_path: "data/downloads"
 
+# timezone for log timestamps (IANA format, e.g. Europe/Moscow, America/New_York, UTC)
+log_timezone: "Europe/Moscow"
+
 # how many recent chat messages will be checked for chat sync?
 sync_history_depth: 30
 
-# mark deleted messages with a marker instead of deleting them
+# will deleted messages from MAX be saved in Telegram with a special mark?
 save_deleted: true
 
 # truncate long messages instead of skipping them (caption limit: 1024 chars, message limit: 4096 chars)
 truncate_long_messages: true
 
-# reconnection settings
+# reconnect configuration
 max_retries: 5
 base_retry_delay: 1s
-ping_timeout: 90s
+ping_timeout: 1m30s
 ```
 
 The `video_headers`, `audio_headers`, and `user_agent` sections contain working default values and usually do not need to be changed.

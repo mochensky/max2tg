@@ -228,6 +228,7 @@ func CreateDefaultConfig(path string) error {
 	yamlContent := fmt.Sprintf(`# %s %s
 # GitHub: https://github.com/mochensky/max2tg
 
+# data paths
 log_path: "%s"
 db_path: "%s"
 download_path: "%s"
