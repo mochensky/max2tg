@@ -43,52 +43,67 @@ func SanitizeFilename(name string) string {
 	return strings.TrimSpace(safe)
 }
 
-func DownloadPhoto(baseURL, photoToken string, photoID int, downloadPath string, userAgent string, proxyCfg *ProxyConfig) string {
+func DownloadPhoto(baseURL, photoToken string, photoID int, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration) string {
 	urlStr := fmt.Sprintf("%s&sig=%s", baseURL, photoToken)
 	filePath := filepath.Join(downloadPath, "images", fmt.Sprintf("%d.webp", photoID))
 
-	client, err := BuildHTTPClientWithProxy(proxyCfg, 60*time.Second)
-	if err != nil {
-		Logf("Failed to configure proxy for photo download %d: %v", photoID, err)
-		client = &http.Client{Timeout: 60 * time.Second}
-	}
-	req, err := http.NewRequest("GET", urlStr, nil)
-	if err != nil {
-		Logf("Failed to create request for photo %d: %v", photoID, err)
-		return ""
-	}
-	req.Header.Set("User-Agent", userAgent)
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := retryDelay * time.Duration(1<<uint(attempt-1))
+			Logf("Retrying photo download %d (attempt %d/%d) after %v: %v", photoID, attempt+1, maxRetries, delay, lastErr)
+			time.Sleep(delay)
+		}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		Logf("Failed to download photo %d: %v", photoID, err)
-		return ""
-	}
-	defer resp.Body.Close()
+		client, err := BuildHTTPClientWithProxy(proxyCfg, 60*time.Second)
+		if err != nil {
+			Logf("Failed to configure proxy for photo download %d: %v", photoID, err)
+			client = &http.Client{Timeout: 60 * time.Second}
+		}
+		req, err := http.NewRequest("GET", urlStr, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		req.Header.Set("User-Agent", userAgent)
 
-	if resp.StatusCode != http.StatusOK {
-		Logf("Failed to download image: HTTP %d", resp.StatusCode)
-		return ""
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			continue
+		}
+
+		file, err := os.Create(filePath)
+		if err != nil {
+			resp.Body.Close()
+			lastErr = err
+			continue
+		}
+
+		_, err = io.Copy(file, resp.Body)
+		resp.Body.Close()
+		file.Close()
+		if err != nil {
+			lastErr = err
+			os.Remove(filePath)
+			continue
+		}
+
+		Logf("Image downloaded: %s", filePath)
+		return filePath
 	}
 
-	file, err := os.Create(filePath)
-	if err != nil {
-		Logf("Failed to create file for photo %d: %v", photoID, err)
-		return ""
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		Logf("Failed to save photo %d: %v", photoID, err)
-		return ""
-	}
-
-	Logf("Image downloaded: %s", filePath)
-	return filePath
+	Logf("Failed to download photo %d after %d attempts: %v", photoID, maxRetries, lastErr)
+	return ""
 }
 
-func DownloadVideo(urlStr string, videoID int, downloadPath string, videoHeaders string, userAgent string, proxyCfg *ProxyConfig) string {
+func DownloadVideo(urlStr string, videoID int, downloadPath string, videoHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration) string {
 	filePath := filepath.Join(downloadPath, "videos", fmt.Sprintf("%d.mp4", videoID))
 
 	parsedURL, err := url.Parse(urlStr)
@@ -97,104 +112,133 @@ func DownloadVideo(urlStr string, videoID int, downloadPath string, videoHeaders
 		return ""
 	}
 
-	client, err := BuildHTTPClientWithProxy(proxyCfg, 120*time.Second)
-	if err != nil {
-		Logf("Failed to configure proxy for video download %d: %v", videoID, err)
-		client = &http.Client{Timeout: 120 * time.Second}
-	}
-	req, err := http.NewRequest("GET", urlStr, nil)
-	if err != nil {
-		Logf("Failed to create request for video %d: %v", videoID, err)
-		return ""
-	}
-
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Host", parsedURL.Host)
-	headers := videoHeaders
-	for _, line := range strings.Split(headers, "\n") {
-		if parts := strings.SplitN(line, ":", 2); len(parts) == 2 {
-			req.Header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := retryDelay * time.Duration(1<<uint(attempt-1))
+			Logf("Retrying video download %d (attempt %d/%d) after %v: %v", videoID, attempt+1, maxRetries, delay, lastErr)
+			time.Sleep(delay)
 		}
+
+		client, err := BuildHTTPClientWithProxy(proxyCfg, 120*time.Second)
+		if err != nil {
+			Logf("Failed to configure proxy for video download %d: %v", videoID, err)
+			client = &http.Client{Timeout: 120 * time.Second}
+		}
+		req, err := http.NewRequest("GET", urlStr, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("Host", parsedURL.Host)
+		for _, line := range strings.Split(videoHeaders, "\n") {
+			if parts := strings.SplitN(line, ":", 2); len(parts) == 2 {
+				req.Header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+			}
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			continue
+		}
+
+		file, err := os.Create(filePath)
+		if err != nil {
+			resp.Body.Close()
+			lastErr = err
+			continue
+		}
+
+		_, err = io.Copy(file, resp.Body)
+		resp.Body.Close()
+		file.Close()
+		if err != nil {
+			lastErr = err
+			os.Remove(filePath)
+			continue
+		}
+
+		Logf("Video downloaded: %s", filePath)
+		return filePath
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		Logf("Failed to download video %d: %v", videoID, err)
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		Logf("Failed to download video: HTTP %d", resp.StatusCode)
-		return ""
-	}
-
-	file, err := os.Create(filePath)
-	if err != nil {
-		Logf("Failed to create file for video %d: %v", videoID, err)
-		return ""
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		Logf("Failed to save video %d: %v", videoID, err)
-		return ""
-	}
-
-	Logf("Video downloaded: %s", filePath)
-	return filePath
+	Logf("Failed to download video %d after %d attempts: %v", videoID, maxRetries, lastErr)
+	return ""
 }
 
-func DownloadFile(urlStr string, fileID int, fileName string, downloadPath string, userAgent string, proxyCfg *ProxyConfig) string {
+func DownloadFile(urlStr string, fileID int, fileName string, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration) string {
 	safeName := SanitizeFilename(fileName)
 	if safeName == "" {
 		safeName = fmt.Sprintf("file-%d", fileID)
 	}
 	filePath := filepath.Join(downloadPath, "files", fmt.Sprintf("%d-%s", fileID, safeName))
 
-	client, err := BuildHTTPClientWithProxy(proxyCfg, 60*time.Second)
-	if err != nil {
-		Logf("Failed to configure proxy for file download %d: %v", fileID, err)
-		client = &http.Client{Timeout: 60 * time.Second}
-	}
-	req, err := http.NewRequest("GET", urlStr, nil)
-	if err != nil {
-		Logf("Failed to create request for file %d: %v", fileID, err)
-		return ""
-	}
-	req.Header.Set("User-Agent", userAgent)
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := retryDelay * time.Duration(1<<uint(attempt-1))
+			Logf("Retrying file download %d (attempt %d/%d) after %v: %v", fileID, attempt+1, maxRetries, delay, lastErr)
+			time.Sleep(delay)
+		}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		Logf("Failed to download file %d: %v", fileID, err)
-		return ""
-	}
-	defer resp.Body.Close()
+		client, err := BuildHTTPClientWithProxy(proxyCfg, 60*time.Second)
+		if err != nil {
+			Logf("Failed to configure proxy for file download %d: %v", fileID, err)
+			client = &http.Client{Timeout: 60 * time.Second}
+		}
+		req, err := http.NewRequest("GET", urlStr, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		req.Header.Set("User-Agent", userAgent)
 
-	if resp.StatusCode != http.StatusOK {
-		Logf("Failed to download file: HTTP %d", resp.StatusCode)
-		return ""
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			continue
+		}
+
+		file, err := os.Create(filePath)
+		if err != nil {
+			resp.Body.Close()
+			lastErr = err
+			continue
+		}
+
+		_, err = io.Copy(file, resp.Body)
+		resp.Body.Close()
+		file.Close()
+		if err != nil {
+			lastErr = err
+			os.Remove(filePath)
+			continue
+		}
+
+		Logf("File downloaded: %s", filePath)
+		return filePath
 	}
 
-	file, err := os.Create(filePath)
-	if err != nil {
-		Logf("Failed to create file for file %d: %v", fileID, err)
-		return ""
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		Logf("Failed to save file %d: %v", fileID, err)
-		return ""
-	}
-
-	Logf("File downloaded: %s", filePath)
-	return filePath
+	Logf("Failed to download file %d after %d attempts: %v", fileID, maxRetries, lastErr)
+	return ""
 }
 
-func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders string, userAgent string, proxyCfg *ProxyConfig) string {
+func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration) string {
 	filePath := filepath.Join(downloadPath, "audio", fmt.Sprintf("%d.mp3", audioID))
 
 	parsedURL, err := url.Parse(urlStr)
@@ -203,53 +247,67 @@ func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders
 		return ""
 	}
 
-	client, err := BuildHTTPClientWithProxy(proxyCfg, 120*time.Second)
-	if err != nil {
-		Logf("Failed to configure proxy for audio download %d: %v", audioID, err)
-		client = &http.Client{Timeout: 120 * time.Second}
-	}
-	req, err := http.NewRequest("GET", urlStr, nil)
-	if err != nil {
-		Logf("Failed to create request for audio %d: %v", audioID, err)
-		return ""
-	}
-
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Host", parsedURL.Host)
-	headers := audioHeaders
-	for _, line := range strings.Split(headers, "\n") {
-		if parts := strings.SplitN(line, ":", 2); len(parts) == 2 {
-			req.Header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := retryDelay * time.Duration(1<<uint(attempt-1))
+			Logf("Retrying audio download %d (attempt %d/%d) after %v: %v", audioID, attempt+1, maxRetries, delay, lastErr)
+			time.Sleep(delay)
 		}
+
+		client, err := BuildHTTPClientWithProxy(proxyCfg, 120*time.Second)
+		if err != nil {
+			Logf("Failed to configure proxy for audio download %d: %v", audioID, err)
+			client = &http.Client{Timeout: 120 * time.Second}
+		}
+		req, err := http.NewRequest("GET", urlStr, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("Host", parsedURL.Host)
+		for _, line := range strings.Split(audioHeaders, "\n") {
+			if parts := strings.SplitN(line, ":", 2); len(parts) == 2 {
+				req.Header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+			}
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			continue
+		}
+
+		file, err := os.Create(filePath)
+		if err != nil {
+			resp.Body.Close()
+			lastErr = err
+			continue
+		}
+
+		_, err = io.Copy(file, resp.Body)
+		resp.Body.Close()
+		file.Close()
+		if err != nil {
+			lastErr = err
+			os.Remove(filePath)
+			continue
+		}
+
+		Logf("Audio downloaded: %s", filePath)
+		return filePath
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		Logf("Failed to download audio %d: %v", audioID, err)
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		Logf("Failed to download audio: HTTP %d", resp.StatusCode)
-		return ""
-	}
-
-	file, err := os.Create(filePath)
-	if err != nil {
-		Logf("Failed to create file for audio %d: %v", audioID, err)
-		return ""
-	}
-	defer file.Close()
-
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		Logf("Failed to save audio %d: %v", audioID, err)
-		return ""
-	}
-
-	Logf("Audio downloaded: %s", filePath)
-	return filePath
+	Logf("Failed to download audio %d after %d attempts: %v", audioID, maxRetries, lastErr)
+	return ""
 }
 
 func CountVisibleCharacters(text string) int {

@@ -282,7 +282,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		switch attach.Type {
 		case src.AttachmentTypeAudio:
 			if attach.AudioURL != "" {
-				path := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy)
+				path := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 				if path != "" {
 					audioPaths = append(audioPaths, path)
 				}
@@ -290,14 +290,14 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		case src.AttachmentTypeFile:
 			url, err := client.GetFileLink(attach, message)
 			if err == nil {
-				path := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy)
+				path := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 				if path != "" {
 					filePaths = append(filePaths, path)
 				}
 			}
 		case src.AttachmentTypePhoto:
 			if attach.BaseURL != "" && attach.PhotoToken != "" {
-				path := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy)
+				path := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 				if path != "" {
 					imagePaths = append(imagePaths, path)
 				}
@@ -305,7 +305,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		case src.AttachmentTypeVideo:
 			url, err := client.GetVideoLink(attach, message)
 			if err == nil {
-				path := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy)
+				path := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 				if path != "" {
 					videoPaths = append(videoPaths, path)
 				}
@@ -318,7 +318,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 			switch attach.Type {
 			case src.AttachmentTypePhoto:
 				if attach.BaseURL != "" && attach.PhotoToken != "" {
-					path := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy)
+					path := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 					if path != "" {
 						imagePaths = append(imagePaths, path)
 					}
@@ -326,7 +326,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 			case src.AttachmentTypeVideo:
 				url, err := client.GetVideoLink(attach, message)
 				if err == nil {
-					path := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy)
+					path := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 					if path != "" {
 						videoPaths = append(videoPaths, path)
 					}
@@ -334,14 +334,14 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 			case src.AttachmentTypeFile:
 				url, err := client.GetFileLink(attach, message)
 				if err == nil {
-					path := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy)
+					path := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 					if path != "" {
 						filePaths = append(filePaths, path)
 					}
 				}
 			case src.AttachmentTypeAudio:
 				if attach.AudioURL != "" {
-					path := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy)
+					path := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 					if path != "" {
 						audioPaths = append(audioPaths, path)
 					}

@@ -12,7 +12,7 @@ import (
 
 const (
 	AppName    = "max2tg"
-	AppVersion = "1.0.8"
+	AppVersion = "1.0.9"
 
 	DefaultEnvPath      = "data/.env"
 	DefaultDBPath       = "data/database.db"
@@ -26,7 +26,11 @@ const (
 
 	DefaultMaxRetries     = 5
 	DefaultBaseRetryDelay = 1 * time.Second
-	DefaultPingTimeout    = 90 * time.Second
+
+	DefaultMediaDownloadMaxRetries = 5
+	DefaultMediaDownloadRetryDelay = 1 * time.Second
+
+	DefaultPingTimeout = 90 * time.Second
 
 	DefaultUserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 YaBrowser/26.3.3.886 Safari/537.36"
 	DefaultLocale       = "ru"
@@ -74,19 +78,21 @@ var DefaultConfig = &Config{
 	Token:    "",
 	DeviceID: "",
 
-	EnvPath:              DefaultEnvPath,
-	DBPath:               DefaultDBPath,
-	LogPath:              DefaultLogPath,
-	DownloadPath:         DefaultDownloadPath,
-	LogTimezone:          DefaultLogTimezone,
-	SyncHistoryDepth:     DefaultSyncHistoryDepth,
-	SaveDeleted:          DefaultSaveDeleted,
-	TruncateLongMessages: DefaultTruncateLongMessages,
-	MaxRetries:           DefaultMaxRetries,
-	BaseRetryDelay:       DefaultBaseRetryDelay,
-	PingTimeout:          DefaultPingTimeout,
-	VideoHeaders:         DefaultVideoHeaders,
-	AudioHeaders:         DefaultAudioHeaders,
+	EnvPath:                 DefaultEnvPath,
+	DBPath:                  DefaultDBPath,
+	LogPath:                 DefaultLogPath,
+	DownloadPath:            DefaultDownloadPath,
+	LogTimezone:             DefaultLogTimezone,
+	SyncHistoryDepth:        DefaultSyncHistoryDepth,
+	SaveDeleted:             DefaultSaveDeleted,
+	TruncateLongMessages:    DefaultTruncateLongMessages,
+	MaxRetries:              DefaultMaxRetries,
+	BaseRetryDelay:          DefaultBaseRetryDelay,
+	MediaDownloadMaxRetries: DefaultMediaDownloadMaxRetries,
+	MediaDownloadRetryDelay: DefaultMediaDownloadRetryDelay,
+	PingTimeout:             DefaultPingTimeout,
+	VideoHeaders:            DefaultVideoHeaders,
+	AudioHeaders:            DefaultAudioHeaders,
 	UserAgent: &UserAgentConfig{
 		UserAgent:    DefaultUserAgent,
 		Locale:       DefaultLocale,
@@ -167,6 +173,13 @@ TG_DEBUG_USER_ID=your_telegram_user_id_for_debug_messages
 
 	if err := validateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	if cfg.MediaDownloadMaxRetries == 0 {
+		cfg.MediaDownloadMaxRetries = DefaultMediaDownloadMaxRetries
+	}
+	if cfg.MediaDownloadRetryDelay == 0 {
+		cfg.MediaDownloadRetryDelay = DefaultMediaDownloadRetryDelay
 	}
 
 	if err := ensureDirs(cfg); err != nil {
@@ -260,6 +273,12 @@ truncate_long_messages: %t
 # RU: конфигурация повторных попыток отправлять Telegram сообщения
 max_retries: %d
 base_retry_delay: %s
+
+# EN: configuration of retries for downloading media from MAX (photos, videos, files, audio)
+# RU: конфигурация повторных попыток скачивания медиа из MAX (фото, видео, файлы, аудио)
+media_download_max_retries: %d
+media_download_retry_delay: %s
+
 # EN: WebSocket ping timeout
 # RU: таймаут для ping WebSocket
 ping_timeout: %s
@@ -357,8 +376,8 @@ audio_headers: |
 		DefaultSyncHistoryDepth,
 		DefaultSaveDeleted,
 		DefaultTruncateLongMessages,
-		DefaultMaxRetries,
-		DefaultBaseRetryDelay,
+		DefaultMaxRetries, DefaultBaseRetryDelay,
+		DefaultMediaDownloadMaxRetries, DefaultMediaDownloadRetryDelay,
 		DefaultPingTimeout,
 		DefaultUserAgent,
 		DefaultLocale,

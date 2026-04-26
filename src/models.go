@@ -171,7 +171,11 @@ type Config struct {
 
 	MaxRetries     int           `yaml:"max_retries"`
 	BaseRetryDelay time.Duration `yaml:"base_retry_delay"`
-	PingTimeout    time.Duration `yaml:"ping_timeout"`
+
+	MediaDownloadMaxRetries int           `yaml:"media_download_max_retries"`
+	MediaDownloadRetryDelay time.Duration `yaml:"media_download_retry_delay"`
+
+	PingTimeout time.Duration `yaml:"ping_timeout"`
 
 	Proxies      []ProxyConfig    `yaml:"proxy"`
 	UserAgent    *UserAgentConfig `yaml:"user_agent"`
