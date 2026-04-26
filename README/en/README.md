@@ -130,7 +130,7 @@ base_retry_delay: 1s
 ping_timeout: 1m30s
 ```
 
-The `video_headers`, `audio_headers`, and `user_agent` sections contain working default values and usually do not need to be changed.
+The `user_agent`, `video_headers` and `audio_headers` sections contain working default values and usually do not need to be changed.
 
 ## Launch
 

@@ -130,7 +130,7 @@ base_retry_delay: 1s
 ping_timeout: 90s
 ```
 
-Секции `video_headers`, `audio_headers` и `user_agent` заполнены рабочими значениями по умолчанию и обычно не требуют изменений.
+Секции `user_agent`, `video_headers` и `audio_headers` заполнены рабочими значениями по умолчанию и обычно не требуют изменений.
 
 ## Запуск
 
