@@ -33,6 +33,11 @@ jobs:
         run: |
           mkdir -p build
           GOOS=linux GOARCH=amd64 go build -o build/max2tg-linux-amd64 main.go
+      
+      - name: Build Linux arm64
+        run: |
+          mkdir -p build
+          GOOS=linux GOARCH=arm64 go build -o build/max2tg-linux-arm64 main.go
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -45,5 +50,6 @@ jobs:
           files: |
             build/max2tg-windows-amd64.exe
             build/max2tg-linux-amd64
+            build/max2tg-linux-arm64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
