@@ -20,6 +20,9 @@ Bridge between the [MAX](https://max.ru) messenger and [Telegram](https://telegr
 - Go 1.21+
 - MAX account
 - Telegram bot (token from [@BotFather](https://t.me/BotFather))
+- Very low server resource requirements:
+  - Runs on 48 MB of RAM (most commonly used less than 16 MB)
+  - CPU load less than 1% of a single Intel Core I9-12900K processor core
 
 ## Installation and Build
 
