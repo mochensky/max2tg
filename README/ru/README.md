@@ -108,8 +108,9 @@ chats:
 
 ```yaml
 # пути к данным
-log_path: "data/logs"
+env_path: "data/.env"
 db_path: "data/database.db"
+log_path: "data/logs"
 download_path: "data/downloads"
 
 # часовой пояс для времени в логах (формат IANA, например, Europe/Moscow, America/New_York, UTC)

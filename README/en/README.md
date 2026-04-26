@@ -108,8 +108,9 @@ chats:
 
 ```yaml
 # data paths
-log_path: "data/logs"
+env_path: "data/.env"
 db_path: "data/database.db"
+log_path: "data/logs"
 download_path: "data/downloads"
 
 # timezone for log timestamps (IANA format, e.g. Europe/Moscow, America/New_York, UTC)
