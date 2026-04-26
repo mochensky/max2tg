@@ -86,16 +86,22 @@ TG_DEBUG_USER_ID=your_telegram_user_id
 The most important part is the `chats` section. Each route links one MAX chat to one Telegram chat (or topic).
 
 ```yaml
+# chat routing configuration
 chats:
-  # Route without topic: MAX chat → Telegram channel/group
-  - max_chat_id: 123456789
+  # e.g. 1: route MAX chat 0 to Telegram group / channel without topic
+  - max_chat_id: 0
     telegram_chat_id: -1001234567890
     telegram_topic_id: 0
 
-  # Route with topic: MAX chat → topic in Telegram group
-  - max_chat_id: 987654321
+  # e.g. 2: route MAX chat 123456789 to Telegram group -1001234567890 topic id 1
+  - max_chat_id: 123456789
     telegram_chat_id: -1001234567890
-    telegram_topic_id: 5
+    telegram_topic_id: 1
+
+  # e.g. 3: route another MAX chat to different Telegram group / channel
+  - max_chat_id: 987654321
+    telegram_chat_id: -1009876543210
+    telegram_topic_id: 0
 ```
 
 **How to get `max_chat_id`:** open the desired chat in [web.max.ru](https://web.max.ru) - the chat ID will be in the URL.
@@ -107,7 +113,7 @@ chats:
 ### 4. Other Parameters in `config.yml`
 
 ```yaml
-# data paths
+# paths to data
 env_path: "data/.env"
 db_path: "data/database.db"
 log_path: "data/logs"
@@ -125,10 +131,30 @@ save_deleted: true
 # truncate long messages instead of skipping them (caption limit: 1024 chars, message limit: 4096 chars)
 truncate_long_messages: true
 
-# reconnect configuration
+# configuration of retries for sending Telegram messages
 max_retries: 5
 base_retry_delay: 1s
+# WebSocket ping timeout
 ping_timeout: 1m30s
+
+# ...
+
+# proxy configuration (optional, can be used to access Telegram if it's blocked in your region)
+# only SOCKS5 proxies are supported
+# username and password fields are optional and only needed if your proxy requires authentication
+proxy:
+  # proxy for MAX
+  - max: false
+    host: "proxy.example.com"
+    port: 1080
+    username: "proxyuser"
+    password: "proxypass"
+  # proxy for Telegram
+  - telegram: false
+    host: "proxy.example.com"
+    port: 1080
+    username: "proxyuser"
+    password: "proxypass"
 ```
 
 The `user_agent`, `video_headers` and `audio_headers` sections contain working default values and usually do not need to be changed.
@@ -163,6 +189,7 @@ On successful start you will see in the logs:
 │   ├── logger.go          - logging
 │   ├── models.go          - data structures
 │   ├── parser.go          - WebSocket API response parsing
+│   ├── proxy.go           - proxy
 │   ├── request_builder.go - request building
 │   ├── sender.go          - sending to Telegram
 │   ├── utils.go           - media file downloading

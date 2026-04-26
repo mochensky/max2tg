@@ -86,16 +86,22 @@ TG_DEBUG_USER_ID=ваш_telegram_user_id
 Основное, что нужно прописать - секция `chats`. Каждый маршрут связывает один MAX-чат с одним Telegram-чатом (или топиком).
 
 ```yaml
+# конфигурация маршрутизации чатов
 chats:
-  # Маршрут без топика: MAX-чат -> Telegram-канал/группа
-  - max_chat_id: 123456789
+  # например, 1: маршрутизировать чат MAX с id 0 в Telegram группу / канал без топика
+  - max_chat_id: 0
     telegram_chat_id: -1001234567890
     telegram_topic_id: 0
 
-  # Маршрут с топиком: MAX-чат -> тема в Telegram-группе
-  - max_chat_id: 987654321
+  # например, 2: маршрутизировать чат MAX с id 123456789 в Telegram группу -1001234567890 в топик id 1
+  - max_chat_id: 123456789
     telegram_chat_id: -1001234567890
-    telegram_topic_id: 5
+    telegram_topic_id: 1
+
+  # например, 3: маршрутизировать другой чат MAX в другую Telegram группу / канал
+  - max_chat_id: 987654321
+    telegram_chat_id: -1009876543210
+    telegram_topic_id: 0
 ```
 
 **Как узнать `max_chat_id`:** откройте нужный чат в [web.max.ru](https://web.max.ru) - ID чата будет в URL.
@@ -119,16 +125,36 @@ log_timezone: "Europe/Moscow"
 # сколько последних сообщений в чате будет проверено на синхронизацию?
 sync_history_depth: 30
 
-# помечать ли удалённые сообщения маркером вместо удаления
+# будут ли удаленные сообщения из MAX сохранены в Telegram с особым маркером?
 save_deleted: true
 
-# обрезать длинные сообщения вместо того, чтобы пропускать их (лимит заголовка: 1024 символа, лимит сообщения: 4096 символов)
+# обрезать длинные сообщения вместо их пропуска (предел заголовка: 1024 символа, предел сообщения: 4096 символов)
 truncate_long_messages: true
 
-# параметры переподключения
+# конфигурация повторных попыток отправлять Telegram сообщения
 max_retries: 5
 base_retry_delay: 1s
+# таймаут для ping WebSocket
 ping_timeout: 1m30s
+
+# ...
+
+# конфигурация прокси (опционально, может быть использована для доступа к Telegram, если он заблокирован в вашем регионе)
+# поддерживаются только прокси SOCKS5
+# поля username и password являются необязательными и нужны только если ваш прокси требует аутентификацию
+proxy:
+  # прокси для MAX
+  - max: false
+    host: "proxy.example.com"
+    port: 1080
+    username: "proxyuser"
+    password: "proxypass"
+  # прокси для Telegram
+  - telegram: false
+    host: "proxy.example.com"
+    port: 1080
+    username: "proxyuser"
+    password: "proxypass"
 ```
 
 Секции `user_agent`, `video_headers` и `audio_headers` заполнены рабочими значениями по умолчанию и обычно не требуют изменений.
@@ -163,6 +189,7 @@ ping_timeout: 1m30s
 │   ├── logger.go          - логирование
 │   ├── models.go          - структуры данных
 │   ├── parser.go          - парсинг ответов WebSocket API
+│   ├── proxy.go           - прокси
 │   ├── request_builder.go - построение запросов
 │   ├── sender.go          - отправка в Telegram
 │   ├── utils.go           - скачивание медиафайлов
