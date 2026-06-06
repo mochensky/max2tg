@@ -22,8 +22,8 @@ func safeInt64(m map[string]interface{}, key string) int64 {
 	return 0
 }
 
-func BuildOutput(message src.Message, senderName string, userNames *src.SafeMap, deletionTime *int64) string {
-	timeStr := src.FormatTime(src.GetMessageTime(message))
+func BuildOutput(message src.Message, senderName string, userNames *src.SafeMap, deletionTime *int64, loc *time.Location) string {
+	timeStr := src.FormatTime(src.GetMessageTime(message), loc)
 
 	text := ""
 	if message.FormattedHTMLText != nil {
@@ -39,7 +39,7 @@ func BuildOutput(message src.Message, senderName string, userNames *src.SafeMap,
 	output := "• " + senderName + "\n• " + timeStr
 
 	if message.Status == src.MessageStatusEDITED && message.UpdateTime != nil {
-		editTimeStr := src.FormatTime(*message.UpdateTime)
+		editTimeStr := src.FormatTime(*message.UpdateTime, loc)
 		output += "\n• [Редактировано " + editTimeStr + "]"
 	}
 
@@ -56,7 +56,7 @@ func BuildOutput(message src.Message, senderName string, userNames *src.SafeMap,
 		}
 		output += "\n• [Пересланное сообщение от " + fwdSender + "]"
 		if deletionTime != nil {
-			deletionTimeStr := src.FormatTime(*deletionTime)
+			deletionTimeStr := src.FormatTime(*deletionTime, loc)
 			output += "\n• [Удалено " + deletionTimeStr + "]"
 		}
 		fwdText := ""
@@ -68,7 +68,7 @@ func BuildOutput(message src.Message, senderName string, userNames *src.SafeMap,
 		output += "\n\n" + fwdText
 	} else {
 		if deletionTime != nil {
-			deletionTimeStr := src.FormatTime(*deletionTime)
+			deletionTimeStr := src.FormatTime(*deletionTime, loc)
 			output += "\n• [Удалено " + deletionTimeStr + "]"
 		}
 		output += "\n\n" + text
@@ -77,7 +77,7 @@ func BuildOutput(message src.Message, senderName string, userNames *src.SafeMap,
 	return output
 }
 
-func HandleControlMessage(message src.Message, userNames *src.SafeMap) string {
+func HandleControlMessage(message src.Message, userNames *src.SafeMap, loc *time.Location) string {
 	if len(message.Attaches) == 0 {
 		return ""
 	}
@@ -99,7 +99,7 @@ func HandleControlMessage(message src.Message, userNames *src.SafeMap) string {
 		return ""
 	}
 
-	timeStr := src.FormatTime(src.GetMessageTime(message))
+	timeStr := src.FormatTime(src.GetMessageTime(message), loc)
 
 	getName := func(uid int) string {
 		return userNames.GetOrDefault(strconv.Itoa(uid), strconv.Itoa(uid))
@@ -268,7 +268,9 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		}
 	}
 
-	if controlOutput := HandleControlMessage(message, userNames); controlOutput != "" {
+	loc := cfg.GetTimezone()
+
+	if controlOutput := HandleControlMessage(message, userNames, loc); controlOutput != "" {
 		tgMsgID, err := sender.SendMessage(controlOutput, message.ChatID, nil)
 		if err != nil {
 			src.Logf("Failed to send control message to Telegram: %v", err)
@@ -281,6 +283,8 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 	}
 
 	audioPaths := []string{}
+	audioDurations := []int{}
+	audioFilePaths := []string{}
 	filePaths := []string{}
 	imagePaths := []string{}
 	videoPaths := []string{}
@@ -294,6 +298,11 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 				path := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 				if path != "" {
 					audioPaths = append(audioPaths, path)
+					dur := 0
+					if attach.AudioDuration != nil {
+						dur = *attach.AudioDuration
+					}
+					audioDurations = append(audioDurations, dur)
 				}
 			}
 		case src.AttachmentTypeFile:
@@ -301,7 +310,11 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 			if err == nil {
 				path := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 				if path != "" {
-					filePaths = append(filePaths, path)
+					if src.IsAudioFile(attach.FileName) {
+						audioFilePaths = append(audioFilePaths, path)
+					} else {
+						filePaths = append(filePaths, path)
+					}
 				}
 			}
 		case src.AttachmentTypePhoto:
@@ -345,7 +358,11 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 				if err == nil {
 					path := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 					if path != "" {
-						filePaths = append(filePaths, path)
+						if src.IsAudioFile(attach.FileName) {
+							audioFilePaths = append(audioFilePaths, path)
+						} else {
+							filePaths = append(filePaths, path)
+						}
 					}
 				}
 			case src.AttachmentTypeAudio:
@@ -353,6 +370,11 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 					path := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
 					if path != "" {
 						audioPaths = append(audioPaths, path)
+						dur := 0
+						if attach.AudioDuration != nil {
+							dur = *attach.AudioDuration
+						}
+						audioDurations = append(audioDurations, dur)
 					}
 				}
 			}
@@ -360,7 +382,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 	}
 
 	senderName := userNames.GetOrDefault(strconv.Itoa(message.SenderID), strconv.Itoa(message.SenderID))
-	output := BuildOutput(message, senderName, userNames, nil)
+	output := BuildOutput(message, senderName, userNames, nil, loc)
 
 	var replyToMsgID *int
 	if message.Link != nil {
@@ -385,10 +407,12 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 	var tgMsgID int
 
 	hasMediaFiles := len(imagePaths) > 0 || len(videoPaths) > 0 || len(filePaths) > 0
+	hasAudio := len(audioPaths) > 0
+	hasAudioFiles := len(audioFilePaths) > 0
 
-	src.Logf("Sending message %d to Telegram (hasMedia=%v, audioCount=%d)", message.ID, hasMediaFiles, len(audioPaths))
+	src.Logf("Sending message %d to Telegram (hasMedia=%v, audioCount=%d, audioFileCount=%d)", message.ID, hasMediaFiles, len(audioPaths), len(audioFilePaths))
 
-	if !hasMediaFiles && len(audioPaths) == 0 {
+	if !hasMediaFiles && !hasAudio && !hasAudioFiles {
 		var err error
 		tgMsgID, err = sender.SendMessage(output, message.ChatID, replyToMsgID)
 		if err != nil {
@@ -399,7 +423,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		if hasMediaFiles {
 			allFiles := append(append([]string{}, imagePaths...), append(videoPaths, filePaths...)...)
 			caption := output
-			if len(audioPaths) > 0 {
+			if hasAudio || hasAudioFiles {
 				caption = ""
 			}
 			mediaGroupIDs, err := sender.SendMediaGroup(allFiles, caption, message.ChatID, replyToMsgID)
@@ -412,25 +436,40 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 			}
 		}
 
-		for i, audioPath := range audioPaths {
-			caption := ""
-			if i == 0 && !hasMediaFiles {
-				caption = output
-			}
-			audioMsgID, err := sender.SendAudio(audioPath, caption, message.ChatID, replyToMsgID)
-			if err != nil {
-				src.Logf("Failed to send audio to Telegram: %v", err)
-				continue
-			}
-			if tgMsgID == 0 {
-				tgMsgID = audioMsgID
+		if hasAudioFiles {
+			for _, audioFilePath := range audioFilePaths {
+				caption := ""
+				if !hasMediaFiles && !hasAudio {
+					caption = output
+				}
+				audioMsgID, err := sender.SendAudio(audioFilePath, caption, message.ChatID, replyToMsgID)
+				if err != nil {
+					src.Logf("Failed to send audio file to Telegram: %v", err)
+				} else if tgMsgID == 0 {
+					tgMsgID = audioMsgID
+				}
 			}
 		}
 
-		if hasMediaFiles && len(audioPaths) > 0 {
-			_, err := sender.SendMessage(output, message.ChatID, replyToMsgID)
+		if hasAudio {
+			for i, audioPath := range audioPaths {
+				dur := 0
+				if i < len(audioDurations) {
+					dur = audioDurations[i]
+				}
+				_, err := sender.SendVoice(audioPath, message.ChatID, replyToMsgID, dur)
+				if err != nil {
+					src.Logf("Failed to send voice to Telegram: %v", err)
+				}
+			}
+		}
+
+		if hasAudio || (hasAudioFiles && hasMediaFiles) {
+			textMsgID, err := sender.SendMessage(output, message.ChatID, nil)
 			if err != nil {
-				src.Logf("Failed to send text message to Telegram: %v", err)
+				src.Logf("Failed to send audio caption message to Telegram: %v", err)
+			} else if tgMsgID == 0 {
+				tgMsgID = textMsgID
 			}
 		}
 	}
@@ -458,8 +497,9 @@ func HandleEditedMessage(client *src.Client, db *src.Database, sender *src.Teleg
 		resolveContact(client, userNames, *message.ForwardedMessage.SenderID)
 	}
 
+	loc := cfg.GetTimezone()
 	senderName := userNames.GetOrDefault(strconv.Itoa(message.SenderID), strconv.Itoa(message.SenderID))
-	output := BuildOutput(message, senderName, userNames, nil)
+	output := BuildOutput(message, senderName, userNames, nil, loc)
 
 	tgMsgID := int(safeInt64(existing, "tg_message_id"))
 	if tgMsgID == 0 {
@@ -535,7 +575,8 @@ func HandleDeletedMessage(client *src.Client, db *src.Database, sender *src.Tele
 		deletionTimestamp = time.Now().Unix()
 	}
 
-	output := BuildOutput(message, senderName, userNames, &deletionTimestamp)
+	loc := cfg.GetTimezone()
+	output := BuildOutput(message, senderName, userNames, &deletionTimestamp, loc)
 
 	hasAttachments := len(message.Attaches) > 0
 	if message.ForwardedMessage != nil {
@@ -603,7 +644,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := src.SetupLogger(cfg.LogPath, cfg.LogTimezone); err != nil {
+	if err := src.SetupLogger(cfg.LogPath, cfg.Timezone); err != nil {
 		fmt.Printf("Failed to setup logger: %v\n", err)
 		os.Exit(1)
 	}

@@ -12,6 +12,16 @@ import (
 	"unicode"
 )
 
+// IsAudioFile returns true for file extensions that Telegram can play inline as audio.
+func IsAudioFile(fileName string) bool {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	switch ext {
+	case ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".oga", ".opus", ".wav":
+		return true
+	}
+	return false
+}
+
 func parseInt(v interface{}) (int, bool) {
 	switch t := v.(type) {
 	case float64:
@@ -145,7 +155,7 @@ func DownloadVideo(urlStr string, videoID int, downloadPath string, videoHeaders
 			continue
 		}
 
-		if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 			resp.Body.Close()
 			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
 			continue
@@ -239,7 +249,7 @@ func DownloadFile(urlStr string, fileID int, fileName string, downloadPath strin
 }
 
 func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration) string {
-	filePath := filepath.Join(downloadPath, "audio", fmt.Sprintf("%d.mp3", audioID))
+	filePath := filepath.Join(downloadPath, "audio", fmt.Sprintf("%d.ogg", audioID))
 
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
@@ -280,7 +290,7 @@ func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders
 			continue
 		}
 
-		if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 			resp.Body.Close()
 			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
 			continue

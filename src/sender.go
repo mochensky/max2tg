@@ -401,6 +401,98 @@ func (s *TelegramSender) SendAudio(filePath string, caption string, maxChatID in
 	return 0, fmt.Errorf("failed to send audio after %d retries: %w", s.maxRetries, lastErr)
 }
 
+func (s *TelegramSender) SendVoice(filePath string, maxChatID int, replyToMessageID *int, duration int) (int, error) {
+	route := s.FindRoute(maxChatID)
+	if route == nil {
+		return 0, fmt.Errorf("no route found for MAX chat ID %d", maxChatID)
+	}
+
+	var lastErr error
+
+	for attempt := 0; attempt < s.maxRetries; attempt++ {
+		if attempt > 0 {
+			retryDelay := s.baseRetryDelay * time.Duration(1<<uint(attempt-1))
+			Logf("Retrying SendVoice (attempt %d/%d) after %v: %v", attempt+1, s.maxRetries, retryDelay, lastErr)
+			time.Sleep(retryDelay)
+		}
+
+		startTime := time.Now()
+
+		url := fmt.Sprintf("https://api.telegram.org/bot%s/sendVoice", s.botToken)
+		var buf bytes.Buffer
+		writer := multipart.NewWriter(&buf)
+
+		writer.WriteField("chat_id", fmt.Sprintf("%d", route.TelegramChatID))
+		if route.TelegramTopicID > 0 {
+			writer.WriteField("message_thread_id", fmt.Sprintf("%d", route.TelegramTopicID))
+		}
+		if replyToMessageID != nil {
+			writer.WriteField("reply_to_message_id", fmt.Sprintf("%d", *replyToMessageID))
+		}
+		if duration > 0 {
+			writer.WriteField("duration", fmt.Sprintf("%d", duration/1000))
+		}
+
+		part, err := writer.CreateFormFile("voice", filepath.Base(filePath))
+		if err != nil {
+			return 0, err
+		}
+		f, err := os.Open(filePath)
+		if err != nil {
+			return 0, err
+		}
+		defer f.Close()
+		io.Copy(part, f)
+		writer.Close()
+
+		resp, err := s.httpClient.Post(url, writer.FormDataContentType(), &buf)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if rateLimitErr, ok := isRateLimitError(string(body)); ok {
+				Logf("Rate limited by Telegram, waiting %d seconds", rateLimitErr.RetryAfter)
+				time.Sleep(time.Duration(rateLimitErr.RetryAfter) * time.Second)
+				lastErr = rateLimitErr
+				continue
+			}
+			lastErr = fmt.Errorf("telegram API error: %s", string(body))
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("telegram API error: %s", string(body))
+			continue
+		}
+
+		var result struct {
+			OK     bool `json:"ok"`
+			Result struct {
+				MessageID int `json:"message_id"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			lastErr = err
+			continue
+		}
+
+		if !result.OK {
+			lastErr = fmt.Errorf("telegram API returned not OK")
+			continue
+		}
+
+		Logf("Voice sent in %v", time.Since(startTime))
+		return result.Result.MessageID, nil
+	}
+
+	return 0, fmt.Errorf("failed to send voice after %d retries: %w", s.maxRetries, lastErr)
+}
+
 func (s *TelegramSender) getMediaType(filePath string) string {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
