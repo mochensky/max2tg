@@ -189,7 +189,9 @@ func parseHTMLText(text string, elements []map[string]interface{}) string {
 			}
 			if idx != -1 {
 				for i := len(stack) - 1; i > idx; i-- {
-					result.WriteString("</" + stack[i] + ">")
+					result.WriteString("</")
+					result.WriteString(stack[i])
+					result.WriteString(">")
 				}
 				result.WriteString(event.Tag)
 				stack = stack[:idx]
@@ -202,7 +204,9 @@ func parseHTMLText(text string, elements []map[string]interface{}) string {
 	}
 
 	for i := len(stack) - 1; i >= 0; i-- {
-		result.WriteString("</" + stack[i] + ">")
+		result.WriteString("</")
+		result.WriteString(stack[i])
+		result.WriteString(">")
 	}
 
 	return result.String()
@@ -704,14 +708,13 @@ func parseContacts(contactsData []map[string]interface{}) []Contact {
 	return contacts
 }
 
-func FormatTime(timestamp int64) string {
+func FormatTime(timestamp int64, loc *time.Location) string {
 	if timestamp == 0 {
 		return ""
 	}
-	tm := time.Unix(timestamp/1000, 0)
-	loc, err := time.LoadLocation("Europe/Moscow")
-	if err != nil {
+	if loc == nil {
 		loc = time.UTC
 	}
+	tm := time.Unix(timestamp/1000, 0)
 	return tm.In(loc).Format("02.01.2006 15:04:05")
 }

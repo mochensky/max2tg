@@ -162,7 +162,7 @@ type Config struct {
 	LogPath      string `yaml:"log_path"`
 	DownloadPath string `yaml:"download_path"`
 
-	LogTimezone          string `yaml:"log_timezone"`
+	Timezone             string `yaml:"timezone"`
 	SyncHistoryDepth     int    `yaml:"sync_history_depth"`
 	SaveDeleted          bool   `yaml:"save_deleted"`
 	TruncateLongMessages bool   `yaml:"truncate_long_messages"`
@@ -183,7 +183,7 @@ type Config struct {
 	AudioHeaders string           `yaml:"audio_headers"`
 }
 
-func (c *Config) GetTimeZoneLocation() *time.Location {
-	loc, _ := time.LoadLocation(c.UserAgent.Timezone)
+func (c *Config) GetTimezone() *time.Location {
+	loc, _ := time.LoadLocation(c.Timezone)
 	return loc
 }

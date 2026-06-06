@@ -43,7 +43,7 @@ func resolveTimezone(timezone string) *time.Location {
 	}
 	loc, err := time.LoadLocation(timezone)
 	if err != nil {
-		fmt.Printf("Warning: invalid log_timezone %q: %v, falling back to UTC\n", timezone, err)
+		fmt.Printf("Warning: invalid timezone %q: %v, falling back to UTC\n", timezone, err)
 		return time.UTC
 	}
 	return loc
