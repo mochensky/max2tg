@@ -2,7 +2,6 @@ package src
 
 import (
 	"database/sql"
-	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -121,9 +120,4 @@ func (d *Database) Close() error {
 		return d.db.Close()
 	}
 	return nil
-}
-
-func GetMoscowTime() time.Time {
-	loc, _ := time.LoadLocation("Europe/Moscow")
-	return time.Now().In(loc)
 }
