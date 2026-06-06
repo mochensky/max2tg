@@ -12,14 +12,14 @@ import (
 
 const (
 	AppName    = "max2tg"
-	AppVersion = "1.1.0"
+	AppVersion = "1.2.0"
 
 	DefaultEnvPath      = "data/.env"
 	DefaultDBPath       = "data/database.db"
 	DefaultLogPath      = "data/logs"
 	DefaultDownloadPath = "data/downloads"
 
-	DefaultLogTimezone          = "Europe/Moscow"
+	DefaultTimezone             = "Europe/Moscow"
 	DefaultSyncHistoryDepth     = 30
 	DefaultSaveDeleted          = true
 	DefaultTruncateLongMessages = true
@@ -37,7 +37,7 @@ const (
 	DefaultDeviceLocale = "ru"
 	DefaultOSVersion    = "Windows"
 	DefaultDeviceName   = "YandexBrowser"
-	DefaultUAAppVersion = "26.4.7"
+	DefaultUAAppVersion = "26.5.8"
 	DefaultScreen       = "1920x1080 1.0x"
 	DefaultUATimezone   = "Europe/Moscow"
 
@@ -82,7 +82,7 @@ var DefaultConfig = &Config{
 	DBPath:                  DefaultDBPath,
 	LogPath:                 DefaultLogPath,
 	DownloadPath:            DefaultDownloadPath,
-	LogTimezone:             DefaultLogTimezone,
+	Timezone:                DefaultTimezone,
 	SyncHistoryDepth:        DefaultSyncHistoryDepth,
 	SaveDeleted:             DefaultSaveDeleted,
 	TruncateLongMessages:    DefaultTruncateLongMessages,
@@ -253,9 +253,9 @@ db_path: "%s"
 log_path: "%s"
 download_path: "%s"
 
-# EN: timezone for log timestamps (IANA format, e.g. Europe/Moscow, America/New_York, UTC)
-# RU: часовой пояс для времени в логах (формат IANA, например, Europe/Moscow, America/New_York, UTC)
-log_timezone: "%s"
+# EN: timezone for timestamps in logs and messages (IANA format, e.g. Europe/Moscow, America/New_York, UTC)
+# RU: часовой пояс для времени в логах и сообщений (формат IANA, например, Europe/Moscow, America/New_York, UTC)
+timezone: "%s"
 
 # EN: how many recent chat messages will be checked for chat sync?
 # RU: сколько последних сообщений в чате будет проверено на синхронизацию?
@@ -372,7 +372,7 @@ audio_headers: |
 `,
 		AppName, AppVersion,
 		DefaultEnvPath, DefaultDBPath, DefaultLogPath, DefaultDownloadPath,
-		DefaultLogTimezone,
+		DefaultTimezone,
 		DefaultSyncHistoryDepth,
 		DefaultSaveDeleted,
 		DefaultTruncateLongMessages,
