@@ -12,7 +12,7 @@ import (
 
 const (
 	AppName    = "max2tg"
-	AppVersion = "1.4.0"
+	AppVersion = "1.4.1"
 
 	DefaultEnvPath      = "data/.env"
 	DefaultDBPath       = "data/database.db"
