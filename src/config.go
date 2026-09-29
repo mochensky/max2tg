@@ -12,12 +12,16 @@ import (
 
 const (
 	AppName    = "max2tg"
-	AppVersion = "1.2.0"
+	AppVersion = "1.3.0"
 
 	DefaultEnvPath      = "data/.env"
 	DefaultDBPath       = "data/database.db"
 	DefaultLogPath      = "data/logs"
 	DefaultDownloadPath = "data/downloads"
+
+	DefaultDownloadMaxAge          = 0 * time.Second
+	DefaultDownloadMaxSizeMB       = 0
+	DefaultDownloadCleanupInterval = 1 * time.Hour
 
 	DefaultTimezone             = "Europe/Moscow"
 	DefaultSyncHistoryDepth     = 30
