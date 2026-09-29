@@ -23,7 +23,7 @@ func safeInt64(m map[string]interface{}, key string) int64 {
 	return 0
 }
 
-func BuildOutput(message src.Message, senderName string, userNames *src.SafeMap, deletionTime *int64, loc *time.Location) string {
+func BuildOutput(message src.Message, senderName string, userNames *src.SafeMap, deletionTime *int64, loc *time.Location, notes []string) string {
 	timeStr := src.FormatTime(src.GetMessageTime(message), loc)
 
 	text := ""
@@ -42,6 +42,10 @@ func BuildOutput(message src.Message, senderName string, userNames *src.SafeMap,
 	if message.Status == src.MessageStatusEDITED && message.UpdateTime != nil {
 		editTimeStr := src.FormatTime(*message.UpdateTime, loc)
 		output += "\n• [Редактировано " + editTimeStr + "]"
+	}
+
+	for _, note := range notes {
+		output += "\n• " + note
 	}
 
 	if message.ForwardedMessage != nil {
@@ -168,6 +172,10 @@ func HandleControlMessage(message src.Message, userNames *src.SafeMap, loc *time
 }
 
 var processingMessages sync.Map
+
+func tooLargeNote(media *src.MediaFile) string {
+	return "[Файл слишком много весит (" + src.FormatFileSize(media.Size) + ")]"
+}
 
 func resolveContact(client *src.Client, userNames *src.SafeMap, userID int) string {
 	key := strconv.Itoa(userID)
@@ -300,13 +308,25 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 
 	maxProxy := src.GetMaxProxy(cfg)
 
+	var mediaNotes []string
+	collect := func(list *[]*src.MediaFile, media *src.MediaFile) bool {
+		if media == nil {
+			return false
+		}
+		if media.TooLarge {
+			mediaNotes = append(mediaNotes, tooLargeNote(media))
+			return false
+		}
+		*list = append(*list, media)
+		return true
+	}
+
 	for _, attach := range message.Attaches {
 		switch attach.Type {
 		case src.AttachmentTypeAudio:
 			if attach.AudioURL != "" {
 				media := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
-				if media != nil {
-					audios = append(audios, media)
+				if collect(&audios, media) {
 					dur := 0
 					if attach.AudioDuration != nil {
 						dur = *attach.AudioDuration
@@ -317,29 +337,23 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		case src.AttachmentTypeFile:
 			url, err := client.GetFileLink(attach, message)
 			if err == nil {
-				media := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
-				if media != nil {
-					if src.IsAudioFile(attach.FileName) {
-						audioFiles = append(audioFiles, media)
-					} else {
-						files = append(files, media)
-					}
+				media := src.DownloadFile(url, attach.FileID, attach.FileName, attach.FileSize, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+				if src.IsAudioFile(attach.FileName) {
+					collect(&audioFiles, media)
+				} else {
+					collect(&files, media)
 				}
 			}
 		case src.AttachmentTypePhoto:
 			if attach.BaseURL != "" && attach.PhotoToken != "" {
 				media := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
-				if media != nil {
-					images = append(images, media)
-				}
+				collect(&images, media)
 			}
 		case src.AttachmentTypeVideo:
 			url, err := client.GetVideoLink(attach, message)
 			if err == nil {
 				media := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
-				if media != nil {
-					videos = append(videos, media)
-				}
+				collect(&videos, media)
 			}
 		}
 	}
@@ -350,35 +364,28 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 			case src.AttachmentTypePhoto:
 				if attach.BaseURL != "" && attach.PhotoToken != "" {
 					media := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
-					if media != nil {
-						images = append(images, media)
-					}
+					collect(&images, media)
 				}
 			case src.AttachmentTypeVideo:
 				url, err := client.GetVideoLink(attach, message)
 				if err == nil {
 					media := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
-					if media != nil {
-						videos = append(videos, media)
-					}
+					collect(&videos, media)
 				}
 			case src.AttachmentTypeFile:
 				url, err := client.GetFileLink(attach, message)
 				if err == nil {
-					media := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
-					if media != nil {
-						if src.IsAudioFile(attach.FileName) {
-							audioFiles = append(audioFiles, media)
-						} else {
-							files = append(files, media)
-						}
+					media := src.DownloadFile(url, attach.FileID, attach.FileName, attach.FileSize, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+					if src.IsAudioFile(attach.FileName) {
+						collect(&audioFiles, media)
+					} else {
+						collect(&files, media)
 					}
 				}
 			case src.AttachmentTypeAudio:
 				if attach.AudioURL != "" {
 					media := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
-					if media != nil {
-						audios = append(audios, media)
+					if collect(&audios, media) {
 						dur := 0
 						if attach.AudioDuration != nil {
 							dur = *attach.AudioDuration
@@ -391,7 +398,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 	}
 
 	senderName := userNames.GetOrDefault(strconv.Itoa(message.SenderID), strconv.Itoa(message.SenderID))
-	output := BuildOutput(message, senderName, userNames, nil, loc)
+	output := BuildOutput(message, senderName, userNames, nil, loc, mediaNotes)
 
 	var replyToMsgID *int
 	if message.Link != nil {
@@ -508,7 +515,7 @@ func HandleEditedMessage(client *src.Client, db *src.Database, sender *src.Teleg
 
 	loc := cfg.GetTimezone()
 	senderName := userNames.GetOrDefault(strconv.Itoa(message.SenderID), strconv.Itoa(message.SenderID))
-	output := BuildOutput(message, senderName, userNames, nil, loc)
+	output := BuildOutput(message, senderName, userNames, nil, loc, nil)
 
 	tgMsgID := int(safeInt64(existing, "tg_message_id"))
 	if tgMsgID == 0 {
@@ -523,6 +530,9 @@ func HandleEditedMessage(client *src.Client, db *src.Database, sender *src.Teleg
 
 	if hasAttachments {
 		err = sender.EditMessageCaption(tgMsgID, output, message.ChatID)
+		if err != nil {
+			err = sender.EditMessageText(tgMsgID, output, message.ChatID)
+		}
 	} else {
 		err = sender.EditMessageText(tgMsgID, output, message.ChatID)
 	}
@@ -585,7 +595,7 @@ func HandleDeletedMessage(client *src.Client, db *src.Database, sender *src.Tele
 	}
 
 	loc := cfg.GetTimezone()
-	output := BuildOutput(message, senderName, userNames, &deletionTimestamp, loc)
+	output := BuildOutput(message, senderName, userNames, &deletionTimestamp, loc, nil)
 
 	hasAttachments := len(message.Attaches) > 0
 	if message.ForwardedMessage != nil {
@@ -594,6 +604,9 @@ func HandleDeletedMessage(client *src.Client, db *src.Database, sender *src.Tele
 
 	if hasAttachments {
 		err = sender.EditMessageCaption(tgMsgID, output, message.ChatID)
+		if err != nil {
+			err = sender.EditMessageText(tgMsgID, output, message.ChatID)
+		}
 	} else {
 		err = sender.EditMessageText(tgMsgID, output, message.ChatID)
 	}

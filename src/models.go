@@ -188,11 +188,6 @@ type Config struct {
 	AudioHeaders string           `yaml:"audio_headers"`
 }
 
-type MediaFile struct {
-	Name string
-	Data []byte
-}
-
 func (c *Config) GetTimezone() *time.Location {
 	loc, _ := time.LoadLocation(c.Timezone)
 	return loc

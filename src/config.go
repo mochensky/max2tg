@@ -266,8 +266,8 @@ db_path: "%s"
 log_path: "%s"
 download_path: "%s"
 
-# EN: will media from MAX be saved to disk (download_path)? if false, media is sent to Telegram directly from memory
-# RU: будут ли медиа из MAX сохраняться на диск (download_path)? если false, медиа отправляются в Telegram напрямую из памяти
+# EN: will media from MAX be saved to disk (download_path)? if false, media is streamed to Telegram without saving to disk
+# RU: будут ли медиа из MAX сохраняться на диск (download_path)? если false, медиа потоково передаются в Telegram без сохранения на диск
 save_media: %t
 
 # EN: automatic cleanup of downloaded media (0 = disabled)

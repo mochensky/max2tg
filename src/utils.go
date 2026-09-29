@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -53,245 +53,220 @@ func SanitizeFilename(name string) string {
 	return strings.TrimSpace(safe)
 }
 
-func storeMedia(kind string, filePath string, data []byte, saveMedia bool) *MediaFile {
-	media := &MediaFile{Name: filepath.Base(filePath), Data: data}
-	if !saveMedia {
-		Logf("%s downloaded to memory: %s (%d bytes)", kind, media.Name, len(data))
-		return media
+const (
+	TelegramPhotoSizeLimit = 10 * 1024 * 1024
+	TelegramFileSizeLimit  = 50 * 1024 * 1024
+
+	mediaDownloadTimeout = 10 * time.Minute
+)
+
+type MediaFile struct {
+	Name     string
+	Size     int64
+	TooLarge bool
+	path     string
+	stream   func() (io.ReadCloser, error)
+}
+
+func (m *MediaFile) Open() (io.ReadCloser, error) {
+	if m.path != "" {
+		return os.Open(m.path)
 	}
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
-		Logf("Failed to save %s to disk %s: %v", strings.ToLower(kind), filePath, err)
-		return media
+	return m.stream()
+}
+
+func FormatFileSize(size int64) string {
+	if size >= 1024*1024*1024 {
+		return fmt.Sprintf("%.1fГБ", float64(size)/1024/1024/1024)
 	}
-	Logf("%s downloaded: %s", kind, filePath)
-	return media
+	return fmt.Sprintf("%.1fМБ", float64(size)/1024/1024)
+}
+
+type mediaSource struct {
+	kind      string
+	id        int
+	url       string
+	headers   string
+	filePath  string
+	knownSize int64
+	userAgent string
+	proxyCfg  *ProxyConfig
+}
+
+func (s mediaSource) client() *http.Client {
+	client, err := BuildHTTPClientWithProxy(s.proxyCfg, mediaDownloadTimeout)
+	if err != nil {
+		Logf("Failed to configure proxy for %s download %d: %v", s.kind, s.id, err)
+		client = &http.Client{Timeout: mediaDownloadTimeout}
+	}
+	return client
+}
+
+func (s mediaSource) request(client *http.Client) (*http.Response, error) {
+	req, err := http.NewRequest("GET", s.url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("User-Agent", s.userAgent)
+	req.Header.Set("Accept-Encoding", "identity")
+	for _, line := range strings.Split(s.headers, "\n") {
+		if parts := strings.SplitN(line, ":", 2); len(parts) == 2 {
+			req.Header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		resp.Body.Close()
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	return resp, nil
+}
+
+func (s mediaSource) open() (io.ReadCloser, error) {
+	resp, err := s.request(s.client())
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %s %d: %w", s.kind, s.id, err)
+	}
+	return resp.Body, nil
+}
+
+func responseSize(resp *http.Response) int64 {
+	if contentRange := resp.Header.Get("Content-Range"); contentRange != "" {
+		if i := strings.LastIndex(contentRange, "/"); i != -1 {
+			if total, err := strconv.ParseInt(contentRange[i+1:], 10, 64); err == nil {
+				return total
+			}
+		}
+	}
+	return resp.ContentLength
+}
+
+func fetchMedia(source mediaSource, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
+	name := filepath.Base(source.filePath)
+	client := source.client()
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := retryDelay * time.Duration(1<<uint(attempt-1))
+			Logf("Retrying %s download %d (attempt %d/%d) after %v: %v", source.kind, source.id, attempt+1, maxRetries, delay, lastErr)
+			time.Sleep(delay)
+		}
+
+		resp, err := source.request(client)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		size := responseSize(resp)
+		if size < 0 && source.knownSize > 0 {
+			size = source.knownSize
+		}
+
+		if size > TelegramFileSizeLimit {
+			resp.Body.Close()
+			Logf("The %s %d is too large for Telegram (%d bytes), skipping", source.kind, source.id, size)
+			return &MediaFile{Name: name, Size: size, TooLarge: true}
+		}
+
+		if !saveMedia {
+			resp.Body.Close()
+			Logf("The %s %d will be sent to Telegram without saving to disk (%d bytes)", source.kind, source.id, size)
+			return &MediaFile{Name: name, Size: size, stream: source.open}
+		}
+
+		file, err := os.Create(source.filePath)
+		if err != nil {
+			resp.Body.Close()
+			lastErr = err
+			continue
+		}
+
+		written, err := io.Copy(file, io.LimitReader(resp.Body, TelegramFileSizeLimit+1))
+		file.Close()
+		if err != nil {
+			resp.Body.Close()
+			lastErr = err
+			os.Remove(source.filePath)
+			continue
+		}
+
+		if written > TelegramFileSizeLimit {
+			os.Remove(source.filePath)
+			rest, _ := io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			size = written + rest
+			Logf("The %s %d is too large for Telegram (%d bytes), skipping", source.kind, source.id, size)
+			return &MediaFile{Name: name, Size: size, TooLarge: true}
+		}
+		resp.Body.Close()
+
+		Logf("The %s %d downloaded: %s", source.kind, source.id, source.filePath)
+		return &MediaFile{Name: name, Size: written, path: source.filePath}
+	}
+
+	Logf("Failed to download %s %d after %d attempts: %v", source.kind, source.id, maxRetries, lastErr)
+	return nil
 }
 
 func DownloadPhoto(baseURL, photoToken string, photoID int, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
-	urlStr := fmt.Sprintf("%s&sig=%s", baseURL, photoToken)
-	filePath := filepath.Join(downloadPath, "images", fmt.Sprintf("%d.webp", photoID))
-
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := retryDelay * time.Duration(1<<uint(attempt-1))
-			Logf("Retrying photo download %d (attempt %d/%d) after %v: %v", photoID, attempt+1, maxRetries, delay, lastErr)
-			time.Sleep(delay)
-		}
-
-		client, err := BuildHTTPClientWithProxy(proxyCfg, 60*time.Second)
-		if err != nil {
-			Logf("Failed to configure proxy for photo download %d: %v", photoID, err)
-			client = &http.Client{Timeout: 60 * time.Second}
-		}
-		req, err := http.NewRequest("GET", urlStr, nil)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		req.Header.Set("User-Agent", userAgent)
-
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
-			continue
-		}
-
-		data, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		return storeMedia("Image", filePath, data, saveMedia)
-	}
-
-	Logf("Failed to download photo %d after %d attempts: %v", photoID, maxRetries, lastErr)
-	return nil
+	return fetchMedia(mediaSource{
+		kind:      "photo",
+		id:        photoID,
+		url:       fmt.Sprintf("%s&sig=%s", baseURL, photoToken),
+		filePath:  filepath.Join(downloadPath, "images", fmt.Sprintf("%d.webp", photoID)),
+		userAgent: userAgent,
+		proxyCfg:  proxyCfg,
+	}, maxRetries, retryDelay, saveMedia)
 }
 
 func DownloadVideo(urlStr string, videoID int, downloadPath string, videoHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
-	filePath := filepath.Join(downloadPath, "videos", fmt.Sprintf("%d.mp4", videoID))
-
-	parsedURL, err := url.Parse(urlStr)
-	if err != nil {
-		Logf("Failed to parse video URL %d: %v", videoID, err)
-		return nil
-	}
-
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := retryDelay * time.Duration(1<<uint(attempt-1))
-			Logf("Retrying video download %d (attempt %d/%d) after %v: %v", videoID, attempt+1, maxRetries, delay, lastErr)
-			time.Sleep(delay)
-		}
-
-		client, err := BuildHTTPClientWithProxy(proxyCfg, 120*time.Second)
-		if err != nil {
-			Logf("Failed to configure proxy for video download %d: %v", videoID, err)
-			client = &http.Client{Timeout: 120 * time.Second}
-		}
-		req, err := http.NewRequest("GET", urlStr, nil)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		req.Header.Set("User-Agent", userAgent)
-		req.Header.Set("Host", parsedURL.Host)
-		for _, line := range strings.Split(videoHeaders, "\n") {
-			if parts := strings.SplitN(line, ":", 2); len(parts) == 2 {
-				req.Header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
-			}
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-			resp.Body.Close()
-			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
-			continue
-		}
-
-		data, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		return storeMedia("Video", filePath, data, saveMedia)
-	}
-
-	Logf("Failed to download video %d after %d attempts: %v", videoID, maxRetries, lastErr)
-	return nil
+	return fetchMedia(mediaSource{
+		kind:      "video",
+		id:        videoID,
+		url:       urlStr,
+		headers:   videoHeaders,
+		filePath:  filepath.Join(downloadPath, "videos", fmt.Sprintf("%d.mp4", videoID)),
+		userAgent: userAgent,
+		proxyCfg:  proxyCfg,
+	}, maxRetries, retryDelay, saveMedia)
 }
 
-func DownloadFile(urlStr string, fileID int, fileName string, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
+func DownloadFile(urlStr string, fileID int, fileName string, fileSize int, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
 	safeName := SanitizeFilename(fileName)
 	if safeName == "" {
 		safeName = fmt.Sprintf("file-%d", fileID)
 	}
-	filePath := filepath.Join(downloadPath, "files", fmt.Sprintf("%d-%s", fileID, safeName))
 
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := retryDelay * time.Duration(1<<uint(attempt-1))
-			Logf("Retrying file download %d (attempt %d/%d) after %v: %v", fileID, attempt+1, maxRetries, delay, lastErr)
-			time.Sleep(delay)
-		}
-
-		client, err := BuildHTTPClientWithProxy(proxyCfg, 60*time.Second)
-		if err != nil {
-			Logf("Failed to configure proxy for file download %d: %v", fileID, err)
-			client = &http.Client{Timeout: 60 * time.Second}
-		}
-		req, err := http.NewRequest("GET", urlStr, nil)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		req.Header.Set("User-Agent", userAgent)
-
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
-			continue
-		}
-
-		data, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		return storeMedia("File", filePath, data, saveMedia)
-	}
-
-	Logf("Failed to download file %d after %d attempts: %v", fileID, maxRetries, lastErr)
-	return nil
+	return fetchMedia(mediaSource{
+		kind:      "file",
+		id:        fileID,
+		url:       urlStr,
+		filePath:  filepath.Join(downloadPath, "files", fmt.Sprintf("%d-%s", fileID, safeName)),
+		knownSize: int64(fileSize),
+		userAgent: userAgent,
+		proxyCfg:  proxyCfg,
+	}, maxRetries, retryDelay, saveMedia)
 }
 
 func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
-	filePath := filepath.Join(downloadPath, "audio", fmt.Sprintf("%d.ogg", audioID))
-
-	parsedURL, err := url.Parse(urlStr)
-	if err != nil {
-		Logf("Failed to parse audio URL %d: %v", audioID, err)
-		return nil
-	}
-
-	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := retryDelay * time.Duration(1<<uint(attempt-1))
-			Logf("Retrying audio download %d (attempt %d/%d) after %v: %v", audioID, attempt+1, maxRetries, delay, lastErr)
-			time.Sleep(delay)
-		}
-
-		client, err := BuildHTTPClientWithProxy(proxyCfg, 120*time.Second)
-		if err != nil {
-			Logf("Failed to configure proxy for audio download %d: %v", audioID, err)
-			client = &http.Client{Timeout: 120 * time.Second}
-		}
-		req, err := http.NewRequest("GET", urlStr, nil)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		req.Header.Set("User-Agent", userAgent)
-		req.Header.Set("Host", parsedURL.Host)
-		for _, line := range strings.Split(audioHeaders, "\n") {
-			if parts := strings.SplitN(line, ":", 2); len(parts) == 2 {
-				req.Header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
-			}
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-			resp.Body.Close()
-			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
-			continue
-		}
-
-		data, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		return storeMedia("Audio", filePath, data, saveMedia)
-	}
-
-	Logf("Failed to download audio %d after %d attempts: %v", audioID, maxRetries, lastErr)
-	return nil
+	return fetchMedia(mediaSource{
+		kind:      "audio",
+		id:        audioID,
+		url:       urlStr,
+		headers:   audioHeaders,
+		filePath:  filepath.Join(downloadPath, "audio", fmt.Sprintf("%d.ogg", audioID)),
+		userAgent: userAgent,
+		proxyCfg:  proxyCfg,
+	}, maxRetries, retryDelay, saveMedia)
 }
 
 func CountVisibleCharacters(text string) int {
