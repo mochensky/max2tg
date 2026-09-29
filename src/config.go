@@ -12,7 +12,7 @@ import (
 
 const (
 	AppName    = "max2tg"
-	AppVersion = "1.3.0"
+	AppVersion = "1.4.0"
 
 	DefaultEnvPath      = "data/.env"
 	DefaultDBPath       = "data/database.db"
@@ -43,7 +43,7 @@ const (
 	DefaultDeviceLocale = "ru"
 	DefaultOSVersion    = "Windows"
 	DefaultDeviceName   = "YandexBrowser"
-	DefaultUAAppVersion = "26.5.8"
+	DefaultUAAppVersion = "26.9.9"
 	DefaultScreen       = "1920x1080 1.0x"
 	DefaultUATimezone   = "Europe/Moscow"
 
