@@ -19,7 +19,7 @@ const (
 	DefaultLogPath      = "data/logs"
 	DefaultDownloadPath = "data/downloads"
 
-	DefaultSaveMedia = true
+	DefaultSaveMedia = false
 
 	DefaultDownloadMaxAge          = 0 * time.Second
 	DefaultDownloadMaxSizeMB       = 0
@@ -116,7 +116,7 @@ var DefaultConfig = &Config{
 }
 
 func LoadConfig(configPath string) (*Config, error) {
-	cfg := &Config{SaveMedia: DefaultSaveMedia}
+	cfg := &Config{}
 
 	if _, err := os.Stat(configPath); err == nil {
 		data, err := os.ReadFile(configPath)

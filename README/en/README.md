@@ -13,7 +13,7 @@ A bridge between [MAX](https://max.ru) messenger and [Telegram](https://telegram
 - **Auto-reconnect** — on connection loss, the bot reconnects with exponential backoff.
 - **Debug notifications** — optionally sends personal Telegram messages on disconnect and reconnect.
 - **Logging** — each run writes a separate log file.
-- **Sending media without saving to disk** — media from MAX can be sent to Telegram directly from memory (configurable).
+- **Sending media without saving to disk** — by default, media from MAX is sent to Telegram directly from memory; saving to disk can be enabled in the settings.
 - **Download cleanup** — downloaded media can be deleted automatically by age or by a folder size limit.
 - **Docker** — a ready-made image and `docker-compose.yml` for quick deployment.
 
@@ -302,9 +302,9 @@ db_path: "data/database.db"
 log_path: "data/logs"
 download_path: "data/downloads"
 
-# If true — media from MAX is saved to disk in download_path
 # If false — media is sent to Telegram directly from memory and is not saved to disk
-save_media: true
+# If true — media from MAX is additionally saved to disk in download_path
+save_media: false
 
 # Automatic cleanup of the download folder (0 — disabled)
 # Files older than this are deleted (e.g. 24h — one day, 168h — one week)
@@ -340,11 +340,23 @@ media_download_retry_delay: 1s
 ping_timeout: 1m30s
 ```
 
+### Saving media to disk
+
+By default (`save_media: false`) media from MAX is not saved to disk: photos, videos, files and audio are downloaded into RAM, sent to Telegram right away and freed after sending. The download folder stays empty.
+
+> Each file is fully loaded into memory before sending, so while a large video is being sent, RAM usage briefly grows by roughly the size of the file.
+
+If you want to keep copies of all media, enable saving:
+
+```yaml
+save_media: true
+```
+
+All downloaded media will then be stored in `download_path` (`images/`, `videos/`, `files/`, `audio/`).
+
 ### Download cleanup
 
-If you don't need to keep media at all, set `save_media: false` — photos, videos, files and audio will then be sent to Telegram directly from memory, and the download folder will stay empty.
-
-If `save_media: true`, all media downloaded from MAX (photos, videos, files, audio) is stored in `download_path` and is not deleted by default. To keep it from piling up on disk, you can enable automatic cleanup — by file age, by total folder size, or both at once.
+With `save_media: true`, saved media is not deleted by default. To keep it from piling up on disk, you can enable automatic cleanup — by file age, by total folder size, or both at once.
 
 ```yaml
 # Delete files older than a week
