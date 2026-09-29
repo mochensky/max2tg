@@ -161,6 +161,7 @@ type Config struct {
 	DBPath       string `yaml:"db_path"`
 	LogPath      string `yaml:"log_path"`
 	DownloadPath string `yaml:"download_path"`
+	SaveMedia    bool   `yaml:"save_media"`
 
 	DownloadMaxAge          time.Duration `yaml:"download_max_age"`
 	DownloadMaxSizeMB       int           `yaml:"download_max_size_mb"`
@@ -185,6 +186,11 @@ type Config struct {
 	UserAgent    *UserAgentConfig `yaml:"user_agent"`
 	VideoHeaders string           `yaml:"video_headers"`
 	AudioHeaders string           `yaml:"audio_headers"`
+}
+
+type MediaFile struct {
+	Name string
+	Data []byte
 }
 
 func (c *Config) GetTimezone() *time.Location {

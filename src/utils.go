@@ -53,7 +53,21 @@ func SanitizeFilename(name string) string {
 	return strings.TrimSpace(safe)
 }
 
-func DownloadPhoto(baseURL, photoToken string, photoID int, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration) string {
+func storeMedia(kind string, filePath string, data []byte, saveMedia bool) *MediaFile {
+	media := &MediaFile{Name: filepath.Base(filePath), Data: data}
+	if !saveMedia {
+		Logf("%s downloaded to memory: %s (%d bytes)", kind, media.Name, len(data))
+		return media
+	}
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		Logf("Failed to save %s to disk %s: %v", strings.ToLower(kind), filePath, err)
+		return media
+	}
+	Logf("%s downloaded: %s", kind, filePath)
+	return media
+}
+
+func DownloadPhoto(baseURL, photoToken string, photoID int, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
 	urlStr := fmt.Sprintf("%s&sig=%s", baseURL, photoToken)
 	filePath := filepath.Join(downloadPath, "images", fmt.Sprintf("%d.webp", photoID))
 
@@ -89,37 +103,27 @@ func DownloadPhoto(baseURL, photoToken string, photoID int, downloadPath string,
 			continue
 		}
 
-		file, err := os.Create(filePath)
-		if err != nil {
-			resp.Body.Close()
-			lastErr = err
-			continue
-		}
-
-		_, err = io.Copy(file, resp.Body)
+		data, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		file.Close()
 		if err != nil {
 			lastErr = err
-			os.Remove(filePath)
 			continue
 		}
 
-		Logf("Image downloaded: %s", filePath)
-		return filePath
+		return storeMedia("Image", filePath, data, saveMedia)
 	}
 
 	Logf("Failed to download photo %d after %d attempts: %v", photoID, maxRetries, lastErr)
-	return ""
+	return nil
 }
 
-func DownloadVideo(urlStr string, videoID int, downloadPath string, videoHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration) string {
+func DownloadVideo(urlStr string, videoID int, downloadPath string, videoHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
 	filePath := filepath.Join(downloadPath, "videos", fmt.Sprintf("%d.mp4", videoID))
 
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
 		Logf("Failed to parse video URL %d: %v", videoID, err)
-		return ""
+		return nil
 	}
 
 	var lastErr error
@@ -161,31 +165,21 @@ func DownloadVideo(urlStr string, videoID int, downloadPath string, videoHeaders
 			continue
 		}
 
-		file, err := os.Create(filePath)
-		if err != nil {
-			resp.Body.Close()
-			lastErr = err
-			continue
-		}
-
-		_, err = io.Copy(file, resp.Body)
+		data, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		file.Close()
 		if err != nil {
 			lastErr = err
-			os.Remove(filePath)
 			continue
 		}
 
-		Logf("Video downloaded: %s", filePath)
-		return filePath
+		return storeMedia("Video", filePath, data, saveMedia)
 	}
 
 	Logf("Failed to download video %d after %d attempts: %v", videoID, maxRetries, lastErr)
-	return ""
+	return nil
 }
 
-func DownloadFile(urlStr string, fileID int, fileName string, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration) string {
+func DownloadFile(urlStr string, fileID int, fileName string, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
 	safeName := SanitizeFilename(fileName)
 	if safeName == "" {
 		safeName = fmt.Sprintf("file-%d", fileID)
@@ -224,37 +218,27 @@ func DownloadFile(urlStr string, fileID int, fileName string, downloadPath strin
 			continue
 		}
 
-		file, err := os.Create(filePath)
-		if err != nil {
-			resp.Body.Close()
-			lastErr = err
-			continue
-		}
-
-		_, err = io.Copy(file, resp.Body)
+		data, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		file.Close()
 		if err != nil {
 			lastErr = err
-			os.Remove(filePath)
 			continue
 		}
 
-		Logf("File downloaded: %s", filePath)
-		return filePath
+		return storeMedia("File", filePath, data, saveMedia)
 	}
 
 	Logf("Failed to download file %d after %d attempts: %v", fileID, maxRetries, lastErr)
-	return ""
+	return nil
 }
 
-func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration) string {
+func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
 	filePath := filepath.Join(downloadPath, "audio", fmt.Sprintf("%d.ogg", audioID))
 
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
 		Logf("Failed to parse audio URL %d: %v", audioID, err)
-		return ""
+		return nil
 	}
 
 	var lastErr error
@@ -296,28 +280,18 @@ func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders
 			continue
 		}
 
-		file, err := os.Create(filePath)
-		if err != nil {
-			resp.Body.Close()
-			lastErr = err
-			continue
-		}
-
-		_, err = io.Copy(file, resp.Body)
+		data, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		file.Close()
 		if err != nil {
 			lastErr = err
-			os.Remove(filePath)
 			continue
 		}
 
-		Logf("Audio downloaded: %s", filePath)
-		return filePath
+		return storeMedia("Audio", filePath, data, saveMedia)
 	}
 
 	Logf("Failed to download audio %d after %d attempts: %v", audioID, maxRetries, lastErr)
-	return ""
+	return nil
 }
 
 func CountVisibleCharacters(text string) int {

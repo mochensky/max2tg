@@ -291,12 +291,12 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		return
 	}
 
-	audioPaths := []string{}
+	audios := []*src.MediaFile{}
 	audioDurations := []int{}
-	audioFilePaths := []string{}
-	filePaths := []string{}
-	imagePaths := []string{}
-	videoPaths := []string{}
+	audioFiles := []*src.MediaFile{}
+	files := []*src.MediaFile{}
+	images := []*src.MediaFile{}
+	videos := []*src.MediaFile{}
 
 	maxProxy := src.GetMaxProxy(cfg)
 
@@ -304,9 +304,9 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		switch attach.Type {
 		case src.AttachmentTypeAudio:
 			if attach.AudioURL != "" {
-				path := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
-				if path != "" {
-					audioPaths = append(audioPaths, path)
+				media := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+				if media != nil {
+					audios = append(audios, media)
 					dur := 0
 					if attach.AudioDuration != nil {
 						dur = *attach.AudioDuration
@@ -317,28 +317,28 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		case src.AttachmentTypeFile:
 			url, err := client.GetFileLink(attach, message)
 			if err == nil {
-				path := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
-				if path != "" {
+				media := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+				if media != nil {
 					if src.IsAudioFile(attach.FileName) {
-						audioFilePaths = append(audioFilePaths, path)
+						audioFiles = append(audioFiles, media)
 					} else {
-						filePaths = append(filePaths, path)
+						files = append(files, media)
 					}
 				}
 			}
 		case src.AttachmentTypePhoto:
 			if attach.BaseURL != "" && attach.PhotoToken != "" {
-				path := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
-				if path != "" {
-					imagePaths = append(imagePaths, path)
+				media := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+				if media != nil {
+					images = append(images, media)
 				}
 			}
 		case src.AttachmentTypeVideo:
 			url, err := client.GetVideoLink(attach, message)
 			if err == nil {
-				path := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
-				if path != "" {
-					videoPaths = append(videoPaths, path)
+				media := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+				if media != nil {
+					videos = append(videos, media)
 				}
 			}
 		}
@@ -349,36 +349,36 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 			switch attach.Type {
 			case src.AttachmentTypePhoto:
 				if attach.BaseURL != "" && attach.PhotoToken != "" {
-					path := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
-					if path != "" {
-						imagePaths = append(imagePaths, path)
+					media := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+					if media != nil {
+						images = append(images, media)
 					}
 				}
 			case src.AttachmentTypeVideo:
 				url, err := client.GetVideoLink(attach, message)
 				if err == nil {
-					path := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
-					if path != "" {
-						videoPaths = append(videoPaths, path)
+					media := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+					if media != nil {
+						videos = append(videos, media)
 					}
 				}
 			case src.AttachmentTypeFile:
 				url, err := client.GetFileLink(attach, message)
 				if err == nil {
-					path := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
-					if path != "" {
+					media := src.DownloadFile(url, attach.FileID, attach.FileName, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+					if media != nil {
 						if src.IsAudioFile(attach.FileName) {
-							audioFilePaths = append(audioFilePaths, path)
+							audioFiles = append(audioFiles, media)
 						} else {
-							filePaths = append(filePaths, path)
+							files = append(files, media)
 						}
 					}
 				}
 			case src.AttachmentTypeAudio:
 				if attach.AudioURL != "" {
-					path := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay)
-					if path != "" {
-						audioPaths = append(audioPaths, path)
+					media := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+					if media != nil {
+						audios = append(audios, media)
 						dur := 0
 						if attach.AudioDuration != nil {
 							dur = *attach.AudioDuration
@@ -415,11 +415,11 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 
 	var tgMsgID int
 
-	hasMediaFiles := len(imagePaths) > 0 || len(videoPaths) > 0 || len(filePaths) > 0
-	hasAudio := len(audioPaths) > 0
-	hasAudioFiles := len(audioFilePaths) > 0
+	hasMediaFiles := len(images) > 0 || len(videos) > 0 || len(files) > 0
+	hasAudio := len(audios) > 0
+	hasAudioFiles := len(audioFiles) > 0
 
-	src.Logf("Sending message %d to Telegram (hasMedia=%v, audioCount=%d, audioFileCount=%d)", message.ID, hasMediaFiles, len(audioPaths), len(audioFilePaths))
+	src.Logf("Sending message %d to Telegram (hasMedia=%v, audioCount=%d, audioFileCount=%d)", message.ID, hasMediaFiles, len(audios), len(audioFiles))
 
 	if !hasMediaFiles && !hasAudio && !hasAudioFiles {
 		var err error
@@ -430,7 +430,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		}
 	} else {
 		if hasMediaFiles {
-			allFiles := append(append([]string{}, imagePaths...), append(videoPaths, filePaths...)...)
+			allFiles := append(append([]*src.MediaFile{}, images...), append(videos, files...)...)
 			caption := output
 			if hasAudio || hasAudioFiles {
 				caption = ""
@@ -446,12 +446,12 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		}
 
 		if hasAudioFiles {
-			for _, audioFilePath := range audioFilePaths {
+			for _, audioFile := range audioFiles {
 				caption := ""
 				if !hasMediaFiles && !hasAudio {
 					caption = output
 				}
-				audioMsgID, err := sender.SendAudio(audioFilePath, caption, message.ChatID, replyToMsgID)
+				audioMsgID, err := sender.SendAudio(audioFile, caption, message.ChatID, replyToMsgID)
 				if err != nil {
 					src.Logf("Failed to send audio file to Telegram: %v", err)
 				} else if tgMsgID == 0 {
@@ -461,12 +461,12 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		}
 
 		if hasAudio {
-			for i, audioPath := range audioPaths {
+			for i, audio := range audios {
 				dur := 0
 				if i < len(audioDurations) {
 					dur = audioDurations[i]
 				}
-				_, err := sender.SendVoice(audioPath, message.ChatID, replyToMsgID, dur)
+				_, err := sender.SendVoice(audio, message.ChatID, replyToMsgID, dur)
 				if err != nil {
 					src.Logf("Failed to send voice to Telegram: %v", err)
 				}

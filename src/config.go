@@ -19,6 +19,8 @@ const (
 	DefaultLogPath      = "data/logs"
 	DefaultDownloadPath = "data/downloads"
 
+	DefaultSaveMedia = true
+
 	DefaultDownloadMaxAge          = 0 * time.Second
 	DefaultDownloadMaxSizeMB       = 0
 	DefaultDownloadCleanupInterval = 1 * time.Hour
@@ -86,6 +88,7 @@ var DefaultConfig = &Config{
 	DBPath:                  DefaultDBPath,
 	LogPath:                 DefaultLogPath,
 	DownloadPath:            DefaultDownloadPath,
+	SaveMedia:               DefaultSaveMedia,
 	DownloadMaxAge:          DefaultDownloadMaxAge,
 	DownloadMaxSizeMB:       DefaultDownloadMaxSizeMB,
 	DownloadCleanupInterval: DefaultDownloadCleanupInterval,
@@ -113,7 +116,7 @@ var DefaultConfig = &Config{
 }
 
 func LoadConfig(configPath string) (*Config, error) {
-	cfg := &Config{}
+	cfg := &Config{SaveMedia: DefaultSaveMedia}
 
 	if _, err := os.Stat(configPath); err == nil {
 		data, err := os.ReadFile(configPath)
@@ -263,6 +266,10 @@ db_path: "%s"
 log_path: "%s"
 download_path: "%s"
 
+# EN: will media from MAX be saved to disk (download_path)? if false, media is sent to Telegram directly from memory
+# RU: будут ли медиа из MAX сохраняться на диск (download_path)? если false, медиа отправляются в Telegram напрямую из памяти
+save_media: %t
+
 # EN: automatic cleanup of downloaded media (0 = disabled)
 # download_max_age: files older than this will be deleted (e.g. 24h, 168h)
 # download_max_size_mb: maximum size of the download folder in MB, the oldest files are deleted first
@@ -394,6 +401,7 @@ audio_headers: |
 `,
 		AppName, AppVersion,
 		DefaultEnvPath, DefaultDBPath, DefaultLogPath, DefaultDownloadPath,
+		DefaultSaveMedia,
 		DefaultDownloadMaxAge, DefaultDownloadMaxSizeMB, DefaultDownloadCleanupInterval,
 		DefaultTimezone,
 		DefaultSyncHistoryDepth,
