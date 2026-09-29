@@ -53,13 +53,6 @@ func SanitizeFilename(name string) string {
 	return strings.TrimSpace(safe)
 }
 
-const (
-	TelegramPhotoSizeLimit = 10 * 1024 * 1024
-	TelegramFileSizeLimit  = 50 * 1024 * 1024
-
-	mediaDownloadTimeout = 10 * time.Minute
-)
-
 type MediaFile struct {
 	Name     string
 	Size     int64
@@ -73,6 +66,10 @@ func (m *MediaFile) Open() (io.ReadCloser, error) {
 		return os.Open(m.path)
 	}
 	return m.stream()
+}
+
+func mediaTimeout(sizeLimit int64) time.Duration {
+	return 10*time.Minute + time.Duration(sizeLimit/(256*1024))*time.Second
 }
 
 func FormatFileSize(size int64) string {
@@ -89,15 +86,16 @@ type mediaSource struct {
 	headers   string
 	filePath  string
 	knownSize int64
+	sizeLimit int64
 	userAgent string
 	proxyCfg  *ProxyConfig
 }
 
 func (s mediaSource) client() *http.Client {
-	client, err := BuildHTTPClientWithProxy(s.proxyCfg, mediaDownloadTimeout)
+	client, err := BuildHTTPClientWithProxy(s.proxyCfg, mediaTimeout(s.sizeLimit))
 	if err != nil {
 		Logf("Failed to configure proxy for %s download %d: %v", s.kind, s.id, err)
-		client = &http.Client{Timeout: mediaDownloadTimeout}
+		client = &http.Client{Timeout: mediaTimeout(s.sizeLimit)}
 	}
 	return client
 }
@@ -171,7 +169,7 @@ func fetchMedia(source mediaSource, maxRetries int, retryDelay time.Duration, sa
 			size = source.knownSize
 		}
 
-		if size > TelegramFileSizeLimit {
+		if size > source.sizeLimit {
 			resp.Body.Close()
 			Logf("The %s %d is too large for Telegram (%d bytes), skipping", source.kind, source.id, size)
 			return &MediaFile{Name: name, Size: size, TooLarge: true}
@@ -190,7 +188,7 @@ func fetchMedia(source mediaSource, maxRetries int, retryDelay time.Duration, sa
 			continue
 		}
 
-		written, err := io.Copy(file, io.LimitReader(resp.Body, TelegramFileSizeLimit+1))
+		written, err := io.Copy(file, io.LimitReader(resp.Body, source.sizeLimit+1))
 		file.Close()
 		if err != nil {
 			resp.Body.Close()
@@ -199,7 +197,7 @@ func fetchMedia(source mediaSource, maxRetries int, retryDelay time.Duration, sa
 			continue
 		}
 
-		if written > TelegramFileSizeLimit {
+		if written > source.sizeLimit {
 			os.Remove(source.filePath)
 			rest, _ := io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
@@ -217,30 +215,32 @@ func fetchMedia(source mediaSource, maxRetries int, retryDelay time.Duration, sa
 	return nil
 }
 
-func DownloadPhoto(baseURL, photoToken string, photoID int, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
+func DownloadPhoto(baseURL, photoToken string, photoID int, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool, sizeLimit int64) *MediaFile {
 	return fetchMedia(mediaSource{
 		kind:      "photo",
 		id:        photoID,
 		url:       fmt.Sprintf("%s&sig=%s", baseURL, photoToken),
 		filePath:  filepath.Join(downloadPath, "images", fmt.Sprintf("%d.webp", photoID)),
+		sizeLimit: sizeLimit,
 		userAgent: userAgent,
 		proxyCfg:  proxyCfg,
 	}, maxRetries, retryDelay, saveMedia)
 }
 
-func DownloadVideo(urlStr string, videoID int, downloadPath string, videoHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
+func DownloadVideo(urlStr string, videoID int, downloadPath string, videoHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool, sizeLimit int64) *MediaFile {
 	return fetchMedia(mediaSource{
 		kind:      "video",
 		id:        videoID,
 		url:       urlStr,
 		headers:   videoHeaders,
 		filePath:  filepath.Join(downloadPath, "videos", fmt.Sprintf("%d.mp4", videoID)),
+		sizeLimit: sizeLimit,
 		userAgent: userAgent,
 		proxyCfg:  proxyCfg,
 	}, maxRetries, retryDelay, saveMedia)
 }
 
-func DownloadFile(urlStr string, fileID int, fileName string, fileSize int, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
+func DownloadFile(urlStr string, fileID int, fileName string, fileSize int, downloadPath string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool, sizeLimit int64) *MediaFile {
 	safeName := SanitizeFilename(fileName)
 	if safeName == "" {
 		safeName = fmt.Sprintf("file-%d", fileID)
@@ -252,18 +252,20 @@ func DownloadFile(urlStr string, fileID int, fileName string, fileSize int, down
 		url:       urlStr,
 		filePath:  filepath.Join(downloadPath, "files", fmt.Sprintf("%d-%s", fileID, safeName)),
 		knownSize: int64(fileSize),
+		sizeLimit: sizeLimit,
 		userAgent: userAgent,
 		proxyCfg:  proxyCfg,
 	}, maxRetries, retryDelay, saveMedia)
 }
 
-func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool) *MediaFile {
+func DownloadAudio(urlStr string, audioID int, downloadPath string, audioHeaders string, userAgent string, proxyCfg *ProxyConfig, maxRetries int, retryDelay time.Duration, saveMedia bool, sizeLimit int64) *MediaFile {
 	return fetchMedia(mediaSource{
 		kind:      "audio",
 		id:        audioID,
 		url:       urlStr,
 		headers:   audioHeaders,
 		filePath:  filepath.Join(downloadPath, "audio", fmt.Sprintf("%d.ogg", audioID)),
+		sizeLimit: sizeLimit,
 		userAgent: userAgent,
 		proxyCfg:  proxyCfg,
 	}, maxRetries, retryDelay, saveMedia)

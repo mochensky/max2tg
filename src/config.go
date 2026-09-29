@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -20,6 +21,10 @@ const (
 	DefaultDownloadPath = "data/downloads"
 
 	DefaultSaveMedia = false
+
+	DefaultTelegramAPIURL       = "https://api.telegram.org"
+	DefaultTelegramFileLimitMB  = 50
+	DefaultTelegramPhotoLimitMB = 10
 
 	DefaultDownloadMaxAge          = 0 * time.Second
 	DefaultDownloadMaxSizeMB       = 0
@@ -89,6 +94,9 @@ var DefaultConfig = &Config{
 	LogPath:                 DefaultLogPath,
 	DownloadPath:            DefaultDownloadPath,
 	SaveMedia:               DefaultSaveMedia,
+	TelegramAPIURL:          DefaultTelegramAPIURL,
+	TelegramFileLimitMB:     DefaultTelegramFileLimitMB,
+	TelegramPhotoLimitMB:    DefaultTelegramPhotoLimitMB,
 	DownloadMaxAge:          DefaultDownloadMaxAge,
 	DownloadMaxSizeMB:       DefaultDownloadMaxSizeMB,
 	DownloadCleanupInterval: DefaultDownloadCleanupInterval,
@@ -194,6 +202,16 @@ TG_DEBUG_USER_ID=your_telegram_user_id_for_debug_messages
 	if cfg.DownloadCleanupInterval <= 0 {
 		cfg.DownloadCleanupInterval = DefaultDownloadCleanupInterval
 	}
+	cfg.TelegramAPIURL = strings.TrimRight(strings.TrimSpace(cfg.TelegramAPIURL), "/")
+	if cfg.TelegramAPIURL == "" {
+		cfg.TelegramAPIURL = DefaultTelegramAPIURL
+	}
+	if cfg.TelegramFileLimitMB <= 0 {
+		cfg.TelegramFileLimitMB = DefaultTelegramFileLimitMB
+	}
+	if cfg.TelegramPhotoLimitMB <= 0 {
+		cfg.TelegramPhotoLimitMB = DefaultTelegramPhotoLimitMB
+	}
 
 	if err := ensureDirs(cfg); err != nil {
 		return nil, fmt.Errorf("failed to create directories: %w", err)
@@ -297,6 +315,19 @@ save_deleted: %t
 # EN: truncate long messages instead of skipping them (caption limit: 1024 chars, message limit: 4096 chars)
 # RU: обрезать длинные сообщения вместо их пропуска (предел заголовка: 1024 символа, предел сообщения: 4096 символов)
 truncate_long_messages: %t
+
+# EN: Telegram Bot API server address (change it only if you use your own self-hosted Telegram Bot API server)
+# RU: адрес сервера Telegram Bot API (меняйте только если используете свой self-hosted сервер Telegram Bot API)
+telegram_api_url: "%s"
+
+# EN: maximum size of media sent to Telegram in MB, larger files are not downloaded and a note with the file size is added to the message instead
+# public Telegram Bot API: 50 MB for files and 10 MB for photos (larger photos are sent as files)
+# self-hosted Telegram Bot API in --local mode: up to 2000 MB for files
+# RU: максимальный размер медиа для отправки в Telegram в МБ, файлы больше не скачиваются, а к сообщению добавляется пометка с размером файла
+# публичный Telegram Bot API: 50 МБ для файлов и 10 МБ для фото (фото больше отправляются как файлы)
+# self-hosted Telegram Bot API в режиме --local: до 2000 МБ для файлов
+telegram_file_size_limit_mb: %d
+telegram_photo_size_limit_mb: %d
 
 # EN: configuration of retries for sending Telegram messages
 # RU: конфигурация повторных попыток отправлять Telegram сообщения
@@ -407,6 +438,7 @@ audio_headers: |
 		DefaultSyncHistoryDepth,
 		DefaultSaveDeleted,
 		DefaultTruncateLongMessages,
+		DefaultTelegramAPIURL, DefaultTelegramFileLimitMB, DefaultTelegramPhotoLimitMB,
 		DefaultMaxRetries, DefaultBaseRetryDelay,
 		DefaultMediaDownloadMaxRetries, DefaultMediaDownloadRetryDelay,
 		DefaultPingTimeout,

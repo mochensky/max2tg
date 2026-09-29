@@ -325,7 +325,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		switch attach.Type {
 		case src.AttachmentTypeAudio:
 			if attach.AudioURL != "" {
-				media := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+				media := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia, cfg.GetTelegramFileSizeLimit())
 				if collect(&audios, media) {
 					dur := 0
 					if attach.AudioDuration != nil {
@@ -337,7 +337,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 		case src.AttachmentTypeFile:
 			url, err := client.GetFileLink(attach, message)
 			if err == nil {
-				media := src.DownloadFile(url, attach.FileID, attach.FileName, attach.FileSize, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+				media := src.DownloadFile(url, attach.FileID, attach.FileName, attach.FileSize, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia, cfg.GetTelegramFileSizeLimit())
 				if src.IsAudioFile(attach.FileName) {
 					collect(&audioFiles, media)
 				} else {
@@ -346,13 +346,13 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 			}
 		case src.AttachmentTypePhoto:
 			if attach.BaseURL != "" && attach.PhotoToken != "" {
-				media := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+				media := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia, cfg.GetTelegramFileSizeLimit())
 				collect(&images, media)
 			}
 		case src.AttachmentTypeVideo:
 			url, err := client.GetVideoLink(attach, message)
 			if err == nil {
-				media := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+				media := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia, cfg.GetTelegramFileSizeLimit())
 				collect(&videos, media)
 			}
 		}
@@ -363,19 +363,19 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 			switch attach.Type {
 			case src.AttachmentTypePhoto:
 				if attach.BaseURL != "" && attach.PhotoToken != "" {
-					media := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+					media := src.DownloadPhoto(attach.BaseURL, attach.PhotoToken, attach.PhotoID, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia, cfg.GetTelegramFileSizeLimit())
 					collect(&images, media)
 				}
 			case src.AttachmentTypeVideo:
 				url, err := client.GetVideoLink(attach, message)
 				if err == nil {
-					media := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+					media := src.DownloadVideo(url, attach.VideoID, cfg.DownloadPath, cfg.VideoHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia, cfg.GetTelegramFileSizeLimit())
 					collect(&videos, media)
 				}
 			case src.AttachmentTypeFile:
 				url, err := client.GetFileLink(attach, message)
 				if err == nil {
-					media := src.DownloadFile(url, attach.FileID, attach.FileName, attach.FileSize, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+					media := src.DownloadFile(url, attach.FileID, attach.FileName, attach.FileSize, cfg.DownloadPath, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia, cfg.GetTelegramFileSizeLimit())
 					if src.IsAudioFile(attach.FileName) {
 						collect(&audioFiles, media)
 					} else {
@@ -384,7 +384,7 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 				}
 			case src.AttachmentTypeAudio:
 				if attach.AudioURL != "" {
-					media := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia)
+					media := src.DownloadAudio(attach.AudioURL, attach.AudioID, cfg.DownloadPath, cfg.AudioHeaders, cfg.UserAgent.UserAgent, maxProxy, cfg.MediaDownloadMaxRetries, cfg.MediaDownloadRetryDelay, cfg.SaveMedia, cfg.GetTelegramFileSizeLimit())
 					if collect(&audios, media) {
 						dur := 0
 						if attach.AudioDuration != nil {
