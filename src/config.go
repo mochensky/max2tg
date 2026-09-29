@@ -38,7 +38,7 @@ const (
 
 	DefaultPingTimeout = 90 * time.Second
 
-	DefaultUserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 YaBrowser/26.3.3.886 Safari/537.36"
+	DefaultUserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 YaBrowser/26.8.3.1016 Safari/537.36"
 	DefaultLocale       = "ru"
 	DefaultDeviceLocale = "ru"
 	DefaultOSVersion    = "Windows"
