@@ -15,6 +15,7 @@ A bridge between [MAX](https://max.ru) messenger and [Telegram](https://telegram
 - **Logging** — each run writes a separate log file.
 - **Sending media without saving to disk** — by default, media from MAX is streamed to Telegram without saving it to disk; saving can be enabled in the settings.
 - **Download cleanup** — downloaded media can be deleted automatically by age or by a folder size limit.
+- **Self-hosted Telegram Bot API** — support for a self-hosted Telegram Bot API server and configurable file size limits (up to 2000 MB).
 - **Docker** — a ready-made image and `docker-compose.yml` for quick deployment.
 
 ## Requirements
@@ -328,6 +329,15 @@ save_deleted: true
 # Caption limit: 1024 chars, message limit: 4096 chars
 truncate_long_messages: true
 
+# Telegram Bot API server address (change it only if you use your own self-hosted server)
+telegram_api_url: "https://api.telegram.org"
+
+# Maximum size of media sent to Telegram in MB
+# Larger files are not downloaded — a note with the file size is added to the message instead
+telegram_file_size_limit_mb: 50
+# Photos larger than this are sent as files
+telegram_photo_size_limit_mb: 10
+
 # Retry settings for Telegram API requests
 max_retries: 5
 base_retry_delay: 1s
@@ -356,10 +366,21 @@ In both modes RAM usage does not depend on the file size — the bot can run eve
 
 ### Telegram limits
 
-Telegram does not allow bots to send files larger than **50 MB**, or photos larger than **10 MB**:
+The public Telegram Bot API does not allow bots to send files larger than **50 MB**, or photos larger than **10 MB**. These limits are set by the `telegram_file_size_limit_mb` and `telegram_photo_size_limit_mb` settings:
 
-- photos larger than 10 MB are sent as files;
-- media larger than 50 MB is not downloaded or sent — instead, a note with the file size is added to the message, e.g. `[Файл слишком много весит (200.2МБ)]`.
+- photos larger than `telegram_photo_size_limit_mb` are sent as files;
+- media larger than `telegram_file_size_limit_mb` is not downloaded or sent — instead, a note with the file size is added to the message, e.g. `[Файл слишком много весит (200.2МБ)]`.
+
+### Self-hosted Telegram Bot API server
+
+If you use your own [Telegram Bot API](https://github.com/tdlib/telegram-bot-api) server running in `--local` mode, bots can send files up to **2000 MB**. Set your server address and raise the limit:
+
+```yaml
+telegram_api_url: "http://127.0.0.1:8081"
+telegram_file_size_limit_mb: 2000
+```
+
+Media is streamed, so even multi-gigabyte files do not increase RAM usage.
 
 ### Download cleanup
 
