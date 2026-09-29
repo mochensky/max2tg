@@ -1,0 +1,12 @@
+.git
+.github
+build
+data
+README
+README.md
+Dockerfile
+docker-compose.yml
+*.db
+*.exe
+*.test
+*.zip

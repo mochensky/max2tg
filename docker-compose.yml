@@ -1,0 +1,7 @@
+services:
+  max2tg:
+    image: ghcr.io/mochensky/max2tg:latest
+    container_name: max2tg
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
