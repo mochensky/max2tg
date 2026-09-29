@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -166,6 +167,10 @@ func HandleControlMessage(message src.Message, userNames *src.SafeMap, loc *time
 	return ""
 }
 
+// processingMessages holds IDs of MAX messages currently being forwarded, so that
+// duplicate ON_MESSAGE events (MAX may send the same message twice) are not sent twice.
+var processingMessages sync.Map
+
 func resolveContact(client *src.Client, userNames *src.SafeMap, userID int) string {
 	key := strconv.Itoa(userID)
 	if name, ok := userNames.Get(key); ok {
@@ -196,6 +201,12 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 	if route == nil {
 		return
 	}
+
+	if _, busy := processingMessages.LoadOrStore(message.ID, struct{}{}); busy {
+		src.Logf("Message %d is already being processed, skipping duplicate", message.ID)
+		return
+	}
+	defer processingMessages.Delete(message.ID)
 
 	src.Logf("Processing message %d from chat %d (sender %d)", message.ID, message.ChatID, message.SenderID)
 
