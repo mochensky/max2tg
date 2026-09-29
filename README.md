@@ -23,6 +23,14 @@ go build -o max2tg .
 ./max2tg
 ```
 
+Or run it in Docker:
+
+```bash
+curl -O https://raw.githubusercontent.com/mochensky/max2tg/main/docker-compose.yml
+docker compose run --rm max2tg
+docker compose up -d
+```
+
 On first run the program creates `data/config.yml` and `data/.env`. Fill in your credentials and re-run. See the full setup guide in the documentation linked above.
 
 ## License

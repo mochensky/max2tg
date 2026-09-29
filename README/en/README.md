@@ -13,7 +13,9 @@ A bridge between [MAX](https://max.ru) messenger and [Telegram](https://telegram
 - **Auto-reconnect** — on connection loss, the bot reconnects with exponential backoff.
 - **Debug notifications** — optionally sends personal Telegram messages on disconnect and reconnect.
 - **Logging** — each run writes a separate log file.
+- **Sending media without saving to disk** — media from MAX can be sent to Telegram directly from memory (configurable).
 - **Download cleanup** — downloaded media can be deleted automatically by age or by a folder size limit.
+- **Docker** — a ready-made image and `docker-compose.yml` for quick deployment.
 
 ## Requirements
 
@@ -45,6 +47,10 @@ On Windows via PowerShell:
 ```powershell
 .\build.ps1
 ```
+
+### Option 3: Docker
+
+See the [Running in Docker](#running-in-docker) section.
 
 ## Getting MAX credentials
 
@@ -146,8 +152,8 @@ max2tg-windows-amd64.exe
 On a successful start you will see:
 
 ```
-[16.04.2026 12:00:00] Starting max2tg 1.3.0...
-[16.04.2026 12:00:00] Application is up to date (1.3.0)
+[16.04.2026 12:00:00] Starting max2tg 1.4.0...
+[16.04.2026 12:00:00] Application is up to date (1.4.0)
 [16.04.2026 12:00:01] Connected to WebSocket
 [16.04.2026 12:00:01] Connected as Ivan (ID: 12345678)
 ```
@@ -231,6 +237,60 @@ nssm install max2tg C:\path\to\max2tg\max2tg-windows-amd64.exe
 nssm start max2tg
 ```
 
+## Running in Docker
+
+A ready-made image is published to `ghcr.io/mochensky/max2tg` with every release (for `amd64` and `arm64`). All data — config, `.env`, database, logs and downloads — is stored in the `data/` folder next to `docker-compose.yml`.
+
+### 1. Download `docker-compose.yml`
+
+```bash
+mkdir max2tg && cd max2tg
+curl -O https://raw.githubusercontent.com/mochensky/max2tg/main/docker-compose.yml
+```
+
+### 2. Run once to generate the configuration files
+
+```bash
+docker compose run --rm max2tg
+```
+
+`config.yml` and `.env` will appear in the `data/` folder. Fill them in as described above (steps 2–4).
+
+### 3. Start the container
+
+```bash
+docker compose up -d
+```
+
+The container restarts automatically on failure and after a server reboot.
+
+### Commands
+
+```bash
+# Stream logs in real time
+docker compose logs -f
+
+# Restart after a config change
+docker compose restart
+
+# Update to the latest version
+docker compose pull
+docker compose up -d
+
+# Stop
+docker compose down
+```
+
+### Building the image from source
+
+If you want to build the image yourself, run this in the source folder:
+
+```bash
+docker build -t max2tg .
+```
+
+Then replace `image: ghcr.io/mochensky/max2tg:latest` with `image: max2tg` in `docker-compose.yml`.
+
 ## Configuration
 
 All settings are stored in `data/config.yml`. Tokens (`MAX_TOKEN`, `MAX_DEVICE_ID`, `TG_TOKEN`, `TG_DEBUG_USER_ID`) go in `data/.env`.
@@ -241,6 +301,10 @@ env_path: "data/.env"
 db_path: "data/database.db"
 log_path: "data/logs"
 download_path: "data/downloads"
+
+# If true — media from MAX is saved to disk in download_path
+# If false — media is sent to Telegram directly from memory and is not saved to disk
+save_media: true
 
 # Automatic cleanup of the download folder (0 — disabled)
 # Files older than this are deleted (e.g. 24h — one day, 168h — one week)
@@ -278,7 +342,9 @@ ping_timeout: 1m30s
 
 ### Download cleanup
 
-All media downloaded from MAX (photos, videos, files, audio) is stored in `download_path` and is not deleted by default. To keep it from piling up on disk, you can enable automatic cleanup — by file age, by total folder size, or both at once.
+If you don't need to keep media at all, set `save_media: false` — photos, videos, files and audio will then be sent to Telegram directly from memory, and the download folder will stay empty.
+
+If `save_media: true`, all media downloaded from MAX (photos, videos, files, audio) is stored in `download_path` and is not deleted by default. To keep it from piling up on disk, you can enable automatic cleanup — by file age, by total folder size, or both at once.
 
 ```yaml
 # Delete files older than a week
@@ -339,5 +405,7 @@ The `user_agent`, `video_headers`, and `audio_headers` sections are pre-filled w
 │   ├── tzdata.go          — embedded timezone data
 │   ├── utils.go           — media file downloading
 │   └── version.go         — version checking
+├── Dockerfile             — Docker image build
+├── docker-compose.yml     — running via Docker Compose
 └── main.go                — entry point, event handlers
 ```
