@@ -167,8 +167,6 @@ func HandleControlMessage(message src.Message, userNames *src.SafeMap, loc *time
 	return ""
 }
 
-// processingMessages holds IDs of MAX messages currently being forwarded, so that
-// duplicate ON_MESSAGE events (MAX may send the same message twice) are not sent twice.
 var processingMessages sync.Map
 
 func resolveContact(client *src.Client, userNames *src.SafeMap, userID int) string {
@@ -690,6 +688,8 @@ func main() {
 		return
 	}
 	defer db.Close()
+
+	src.StartDownloadCleanup(cfg)
 
 	telegramSender := src.NewTelegramSender(cfg.TGToken, cfg.ChatRoutes, cfg)
 

@@ -82,6 +82,9 @@ var DefaultConfig = &Config{
 	DBPath:                  DefaultDBPath,
 	LogPath:                 DefaultLogPath,
 	DownloadPath:            DefaultDownloadPath,
+	DownloadMaxAge:          DefaultDownloadMaxAge,
+	DownloadMaxSizeMB:       DefaultDownloadMaxSizeMB,
+	DownloadCleanupInterval: DefaultDownloadCleanupInterval,
 	Timezone:                DefaultTimezone,
 	SyncHistoryDepth:        DefaultSyncHistoryDepth,
 	SaveDeleted:             DefaultSaveDeleted,
@@ -181,6 +184,9 @@ TG_DEBUG_USER_ID=your_telegram_user_id_for_debug_messages
 	if cfg.MediaDownloadRetryDelay == 0 {
 		cfg.MediaDownloadRetryDelay = DefaultMediaDownloadRetryDelay
 	}
+	if cfg.DownloadCleanupInterval <= 0 {
+		cfg.DownloadCleanupInterval = DefaultDownloadCleanupInterval
+	}
 
 	if err := ensureDirs(cfg); err != nil {
 		return nil, fmt.Errorf("failed to create directories: %w", err)
@@ -252,6 +258,18 @@ env_path: "%s"
 db_path: "%s"
 log_path: "%s"
 download_path: "%s"
+
+# EN: automatic cleanup of downloaded media (0 = disabled)
+# download_max_age: files older than this will be deleted (e.g. 24h, 168h)
+# download_max_size_mb: maximum size of the download folder in MB, the oldest files are deleted first
+# download_cleanup_interval: how often the download folder is checked
+# RU: автоматическая очистка скачанных медиа (0 = отключено)
+# download_max_age: файлы старше этого значения будут удалены (например, 24h, 168h)
+# download_max_size_mb: максимальный размер папки загрузок в МБ, в первую очередь удаляются самые старые файлы
+# download_cleanup_interval: как часто проверяется папка загрузок
+download_max_age: %s
+download_max_size_mb: %d
+download_cleanup_interval: %s
 
 # EN: timezone for timestamps in logs and messages (IANA format, e.g. Europe/Moscow, America/New_York, UTC)
 # RU: часовой пояс для времени в логах и сообщений (формат IANA, например, Europe/Moscow, America/New_York, UTC)
@@ -372,6 +390,7 @@ audio_headers: |
 `,
 		AppName, AppVersion,
 		DefaultEnvPath, DefaultDBPath, DefaultLogPath, DefaultDownloadPath,
+		DefaultDownloadMaxAge, DefaultDownloadMaxSizeMB, DefaultDownloadCleanupInterval,
 		DefaultTimezone,
 		DefaultSyncHistoryDepth,
 		DefaultSaveDeleted,
