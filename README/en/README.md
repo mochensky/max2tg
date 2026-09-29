@@ -13,7 +13,7 @@ A bridge between [MAX](https://max.ru) messenger and [Telegram](https://telegram
 - **Auto-reconnect** — on connection loss, the bot reconnects with exponential backoff.
 - **Debug notifications** — optionally sends personal Telegram messages on disconnect and reconnect.
 - **Logging** — each run writes a separate log file.
-- **Sending media without saving to disk** — by default, media from MAX is sent to Telegram directly from memory; saving to disk can be enabled in the settings.
+- **Sending media without saving to disk** — by default, media from MAX is streamed to Telegram without saving it to disk; saving can be enabled in the settings.
 - **Download cleanup** — downloaded media can be deleted automatically by age or by a folder size limit.
 - **Docker** — a ready-made image and `docker-compose.yml` for quick deployment.
 
@@ -152,8 +152,8 @@ max2tg-windows-amd64.exe
 On a successful start you will see:
 
 ```
-[16.04.2026 12:00:00] Starting max2tg 1.4.0...
-[16.04.2026 12:00:00] Application is up to date (1.4.0)
+[16.04.2026 12:00:00] Starting max2tg 1.4.1...
+[16.04.2026 12:00:00] Application is up to date (1.4.1)
 [16.04.2026 12:00:01] Connected to WebSocket
 [16.04.2026 12:00:01] Connected as Ivan (ID: 12345678)
 ```
@@ -302,7 +302,7 @@ db_path: "data/database.db"
 log_path: "data/logs"
 download_path: "data/downloads"
 
-# If false — media is sent to Telegram directly from memory and is not saved to disk
+# If false — media is streamed from MAX to Telegram and is not saved to disk
 # If true — media from MAX is additionally saved to disk in download_path
 save_media: false
 
@@ -342,9 +342,7 @@ ping_timeout: 1m30s
 
 ### Saving media to disk
 
-By default (`save_media: false`) media from MAX is not saved to disk: photos, videos, files and audio are downloaded into RAM, sent to Telegram right away and freed after sending. The download folder stays empty.
-
-> Each file is fully loaded into memory before sending, so while a large video is being sent, RAM usage briefly grows by roughly the size of the file.
+By default (`save_media: false`) media from MAX is not saved to disk: photos, videos, files and audio are streamed from MAX to Telegram in small chunks, without loading the whole file into memory. The download folder stays empty.
 
 If you want to keep copies of all media, enable saving:
 
@@ -352,7 +350,16 @@ If you want to keep copies of all media, enable saving:
 save_media: true
 ```
 
-All downloaded media will then be stored in `download_path` (`images/`, `videos/`, `files/`, `audio/`).
+All media is then first streamed to `download_path` (`images/`, `videos/`, `files/`, `audio/`) and then streamed to Telegram the same way.
+
+In both modes RAM usage does not depend on the file size — the bot can run even on low-memory devices, such as a router.
+
+### Telegram limits
+
+Telegram does not allow bots to send files larger than **50 MB**, or photos larger than **10 MB**:
+
+- photos larger than 10 MB are sent as files;
+- media larger than 50 MB is not downloaded or sent — instead, a note with the file size is added to the message, e.g. `[Файл слишком много весит (200.2МБ)]`.
 
 ### Download cleanup
 
