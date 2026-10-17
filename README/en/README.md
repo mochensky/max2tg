@@ -10,6 +10,7 @@ A bridge between [MAX](https://max.ru) messenger and [Telegram](https://telegram
 - **System events** — joining a chat, adding and removing members, chat creation.
 - **History sync** — on startup and after reconnection, missed messages are fetched and forwarded.
 - **Routing** — each MAX chat can be directed to a separate Telegram chat or topic.
+- **Automatic topic creation** — for new MAX chats the bot creates a topic in a Telegram group by itself and saves the route to the config.
 - **Auto-reconnect** — on connection loss, the bot reconnects with exponential backoff.
 - **Debug notifications** — optionally sends personal Telegram messages on disconnect and reconnect.
 - **Logging** — each run writes a separate log file.
@@ -116,7 +117,7 @@ TG_DEBUG_USER_ID=your_telegram_user_id
 
 ### Step 4: Configure routes in `data/config.yml`
 
-The `chats` section maps each MAX chat to a Telegram destination. At least one route is required.
+The `chats` section maps each MAX chat to a Telegram destination. At least one route is required, or [automatic topic creation](#automatic-topic-creation) must be enabled.
 
 ```yaml
 chats:
@@ -348,6 +349,9 @@ media_download_retry_delay: 1s
 
 # How long to wait for a WebSocket ping response before reconnecting
 ping_timeout: 1m30s
+
+# ID of a Telegram group with topics enabled for automatic topic creation (0 — disabled)
+auto_topics_chat_id: 0
 ```
 
 ### Saving media to disk
@@ -398,6 +402,34 @@ download_cleanup_interval: 1h
 ```
 
 Files downloaded less than 10 minutes ago are never deleted, so media that is being sent to Telegram right now is not removed.
+
+### Automatic topic creation
+
+The bot can create topics by itself for MAX chats that don't have a route yet: as soon as a message arrives from such a chat, the bot creates a new topic in a Telegram group named after the chat (for private chats — after the other person), forwards the message there and immediately saves the route to the `chats` section of `config.yml`.
+
+What you need to do:
+
+1. Enable topics in the Telegram group: **Manage group → Topics**.
+2. Add the bot to the group as an administrator with the **Manage topics** right.
+3. Set the group ID in `config.yml`:
+
+```yaml
+auto_topics_chat_id: -1001234567890
+```
+
+Created routes look the same as routes added manually — the bot adds a comment with the chat name above each of them:
+
+```yaml
+chats:
+  # Ivan Ivanov
+  - max_chat_id: 123456789
+    telegram_chat_id: -1001234567890
+    telegram_topic_id: 15
+```
+
+Topics are created for **all** MAX chats without a route, including private chats, groups and channels. A route can be changed manually — for example, to a different `telegram_topic_id`. If you remove a route from the config, the bot will create a new topic on the next message from that chat.
+
+On startup the bot checks that topics are enabled in the specified group and writes a warning to the log if they are not.
 
 ### Proxy configuration
 
