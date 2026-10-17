@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,8 @@ type TelegramSender struct {
 	config         *Config
 	httpClient     *http.Client
 	uploadClient   *http.Client
+	routesMu       sync.RWMutex
+	autoRouteMu    sync.Mutex
 }
 
 func NewTelegramSender(botToken string, routes []ChatRoute, cfg *Config) *TelegramSender {
@@ -45,7 +48,7 @@ func NewTelegramSender(botToken string, routes []ChatRoute, cfg *Config) *Telegr
 
 	return &TelegramSender{
 		botToken:       botToken,
-		routes:         routes,
+		routes:         append([]ChatRoute{}, routes...),
 		maxRetries:     cfg.MaxRetries,
 		baseRetryDelay: cfg.BaseRetryDelay,
 		config:         cfg,
@@ -86,12 +89,174 @@ func (s *TelegramSender) apiURL(method string) string {
 }
 
 func (s *TelegramSender) FindRoute(maxChatID int) *ChatRoute {
+	s.routesMu.RLock()
+	defer s.routesMu.RUnlock()
 	for i := range s.routes {
 		if s.routes[i].MaxChatID == maxChatID {
-			return &s.routes[i]
+			route := s.routes[i]
+			return &route
 		}
 	}
 	return nil
+}
+
+func (s *TelegramSender) GetRoutes() []ChatRoute {
+	s.routesMu.RLock()
+	defer s.routesMu.RUnlock()
+	return append([]ChatRoute{}, s.routes...)
+}
+
+func (s *TelegramSender) CreateAutoRoute(maxChatID int, title string) (*ChatRoute, error) {
+	s.autoRouteMu.Lock()
+	defer s.autoRouteMu.Unlock()
+
+	if route := s.FindRoute(maxChatID); route != nil {
+		return route, nil
+	}
+
+	topicID, err := s.CreateForumTopic(s.config.AutoTopicsChatID, title)
+	if err != nil {
+		return nil, err
+	}
+
+	route := ChatRoute{
+		MaxChatID:       maxChatID,
+		TelegramChatID:  s.config.AutoTopicsChatID,
+		TelegramTopicID: topicID,
+	}
+
+	s.routesMu.Lock()
+	s.routes = append(s.routes, route)
+	s.routesMu.Unlock()
+
+	if err := AppendChatRoute(s.config.Path, route, title); err != nil {
+		Logf("Failed to save route for MAX chat %d to config: %v", maxChatID, err)
+	} else {
+		Logf("Route for MAX chat %d saved to config", maxChatID)
+	}
+
+	return &route, nil
+}
+
+func (s *TelegramSender) CreateForumTopic(chatID int64, name string) (int, error) {
+	name = strings.Join(strings.Fields(name), " ")
+	if runes := []rune(name); len(runes) > 128 {
+		name = string(runes[:128])
+	}
+	if name == "" {
+		name = "MAX"
+	}
+
+	payload := map[string]interface{}{
+		"chat_id": chatID,
+		"name":    name,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return 0, err
+	}
+
+	var lastErr error
+
+	for attempt := 0; attempt < s.maxRetries; attempt++ {
+		if attempt > 0 {
+			retryDelay := s.baseRetryDelay * time.Duration(1<<uint(attempt-1))
+			Logf("Retrying CreateForumTopic (attempt %d/%d) after %v: %v", attempt+1, s.maxRetries, retryDelay, lastErr)
+			time.Sleep(retryDelay)
+		}
+
+		resp, err := s.httpClient.Post(s.apiURL("createForumTopic"), "application/json", bytes.NewReader(jsonData))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if rateLimitErr, ok := isRateLimitError(string(body)); ok {
+				Logf("Rate limited by Telegram, waiting %d seconds", rateLimitErr.RetryAfter)
+				time.Sleep(time.Duration(rateLimitErr.RetryAfter) * time.Second)
+				lastErr = rateLimitErr
+				continue
+			}
+			lastErr = fmt.Errorf("telegram API error: %s", string(body))
+			continue
+		}
+
+		if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusForbidden {
+			return 0, fmt.Errorf("telegram API error: %s", string(body))
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("telegram API error: %s", string(body))
+			continue
+		}
+
+		var result struct {
+			OK     bool `json:"ok"`
+			Result struct {
+				MessageThreadID int `json:"message_thread_id"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			lastErr = err
+			continue
+		}
+
+		if !result.OK || result.Result.MessageThreadID == 0 {
+			lastErr = fmt.Errorf("telegram API returned not OK")
+			continue
+		}
+
+		Logf("Created forum topic '%s' with ID %d in chat %d", name, result.Result.MessageThreadID, chatID)
+		return result.Result.MessageThreadID, nil
+	}
+
+	return 0, fmt.Errorf("failed to create forum topic after %d attempts: %w", s.maxRetries, lastErr)
+}
+
+func (s *TelegramSender) CheckAutoTopicsChat() {
+	chatID := s.config.AutoTopicsChatID
+	if chatID == 0 {
+		return
+	}
+
+	jsonData, err := json.Marshal(map[string]interface{}{"chat_id": chatID})
+	if err != nil {
+		return
+	}
+
+	resp, err := s.httpClient.Post(s.apiURL("getChat"), "application/json", bytes.NewReader(jsonData))
+	if err != nil {
+		Logf("Failed to check auto topics chat %d: %v", chatID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+		Result      struct {
+			Title   string `json:"title"`
+			IsForum bool   `json:"is_forum"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || !result.OK {
+		Logf("Warning: auto topics chat %d is not available: %s", chatID, string(body))
+		return
+	}
+
+	if !result.Result.IsForum {
+		Logf("Warning: topics are not enabled in auto topics chat %d (%s), new topics cannot be created", chatID, result.Result.Title)
+		return
+	}
+
+	Logf("Auto topics enabled in chat %d (%s)", chatID, result.Result.Title)
 }
 
 func (s *TelegramSender) SendMessage(text string, maxChatID int, replyToMessageID *int) (int, error) {

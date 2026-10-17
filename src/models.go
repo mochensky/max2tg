@@ -151,6 +151,8 @@ type ChatRoute struct {
 }
 
 type Config struct {
+	Path string `yaml:"-"`
+
 	Token    string `yaml:"token"`
 	DeviceID string `yaml:"device_id"`
 
@@ -176,7 +178,8 @@ type Config struct {
 	TelegramFileLimitMB  int    `yaml:"telegram_file_size_limit_mb"`
 	TelegramPhotoLimitMB int    `yaml:"telegram_photo_size_limit_mb"`
 
-	ChatRoutes []ChatRoute `yaml:"chats"`
+	AutoTopicsChatID int64       `yaml:"auto_topics_chat_id"`
+	ChatRoutes       []ChatRoute `yaml:"chats"`
 
 	MaxRetries     int           `yaml:"max_retries"`
 	BaseRetryDelay time.Duration `yaml:"base_retry_delay"`

@@ -26,6 +26,8 @@ const (
 	DefaultTelegramFileLimitMB  = 50
 	DefaultTelegramPhotoLimitMB = 10
 
+	DefaultAutoTopicsChatID = 0
+
 	DefaultDownloadMaxAge          = 0 * time.Second
 	DefaultDownloadMaxSizeMB       = 0
 	DefaultDownloadCleanupInterval = 1 * time.Hour
@@ -124,7 +126,7 @@ var DefaultConfig = &Config{
 }
 
 func LoadConfig(configPath string) (*Config, error) {
-	cfg := &Config{}
+	cfg := &Config{Path: configPath}
 
 	if _, err := os.Stat(configPath); err == nil {
 		data, err := os.ReadFile(configPath)
@@ -235,8 +237,8 @@ func validateConfig(cfg *Config) error {
 		}
 	}
 
-	if len(cfg.ChatRoutes) == 0 {
-		return fmt.Errorf("no chat routes configured: at least one route must be defined in config.yml 'chats' section")
+	if len(cfg.ChatRoutes) == 0 && cfg.AutoTopicsChatID == 0 {
+		return fmt.Errorf("no chat routes configured: at least one route must be defined in config.yml 'chats' section or 'auto_topics_chat_id' must be set")
 	}
 
 	for i, route := range cfg.ChatRoutes {
@@ -343,6 +345,12 @@ media_download_retry_delay: %s
 # RU: таймаут для ping WebSocket
 ping_timeout: %s
 
+# EN: Telegram group with topics enabled, where a new topic is created automatically for every MAX chat without a route (0 = disabled)
+# the bot must be an administrator of the group with the "Manage topics" right, created routes are saved to the chats section below
+# RU: группа Telegram с включёнными темами, в которой для каждого чата MAX без маршрута автоматически создаётся новый топик (0 = отключено)
+# бот должен быть администратором группы с правом «Управление темами», созданные маршруты сохраняются в раздел chats ниже
+auto_topics_chat_id: %d
+
 # EN: chat routing configuration
 # RU: конфигурация маршрутизации чатов
 chats:
@@ -442,6 +450,7 @@ audio_headers: |
 		DefaultMaxRetries, DefaultBaseRetryDelay,
 		DefaultMediaDownloadMaxRetries, DefaultMediaDownloadRetryDelay,
 		DefaultPingTimeout,
+		DefaultAutoTopicsChatID,
 		DefaultUserAgent,
 		DefaultLocale,
 		DefaultDeviceLocale,
@@ -453,4 +462,122 @@ audio_headers: |
 	)
 
 	return os.WriteFile(path, []byte(yamlContent), 0644)
+}
+
+func AppendChatRoute(path string, route ChatRoute, title string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	newline := "\n"
+	if strings.Contains(string(data), "\r\n") {
+		newline = "\r\n"
+	}
+	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+
+	title = strings.Join(strings.Fields(title), " ")
+	buildEntry := func(indent string) []string {
+		entry := []string{}
+		if title != "" {
+			entry = append(entry, indent+"# "+title)
+		}
+		return append(entry,
+			fmt.Sprintf("%s- max_chat_id: %d", indent, route.MaxChatID),
+			fmt.Sprintf("%s  telegram_chat_id: %d", indent, route.TelegramChatID),
+			fmt.Sprintf("%s  telegram_topic_id: %d", indent, route.TelegramTopicID),
+		)
+	}
+
+	chatsLine := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "chats:") {
+			chatsLine = i
+			break
+		}
+	}
+
+	var result []string
+	if chatsLine == -1 {
+		for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+			lines = lines[:len(lines)-1]
+		}
+		result = append(append(append(lines, "", "chats:"), buildEntry("  ")...), "")
+	} else {
+		rest := strings.TrimSpace(strings.TrimPrefix(lines[chatsLine], "chats:"))
+		if rest != "" && !strings.HasPrefix(rest, "#") && rest != "[]" {
+			return fmt.Errorf("unsupported format of the chats section in config file")
+		}
+		lines[chatsLine] = "chats:"
+
+		end := len(lines)
+		indent := ""
+		for i := chatsLine + 1; i < len(lines); i++ {
+			line := lines[i]
+			if line != "" && line[0] != ' ' && line[0] != '	' && line[0] != '-' {
+				end = i
+				break
+			}
+			trimmed := strings.TrimLeft(line, " 	")
+			if indent == "" && strings.HasPrefix(trimmed, "- ") {
+				indent = line[:len(line)-len(trimmed)]
+				if indent == "" {
+					indent = "-"
+				}
+			}
+		}
+		if indent == "-" {
+			indent = ""
+		} else if indent == "" {
+			indent = "  "
+		}
+
+		insertAt := chatsLine + 1
+		hasRoutes := false
+		for i := chatsLine + 1; i < end; i++ {
+			trimmed := strings.TrimSpace(lines[i])
+			if trimmed != "" {
+				insertAt = i + 1
+				if !strings.HasPrefix(trimmed, "#") {
+					hasRoutes = true
+				}
+			}
+		}
+
+		entry := buildEntry(indent)
+		if !hasRoutes && insertAt > chatsLine+1 {
+			entry = append([]string{""}, entry...)
+		}
+
+		result = append(result, lines[:insertAt]...)
+		result = append(result, entry...)
+		result = append(result, lines[insertAt:]...)
+	}
+
+	content := strings.Join(result, "\n")
+
+	var check Config
+	if err := yaml.Unmarshal([]byte(content), &check); err != nil {
+		return fmt.Errorf("failed to validate updated config: %w", err)
+	}
+	found := false
+	for _, r := range check.ChatRoutes {
+		if r == route {
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("failed to validate updated config: route not found after update")
+	}
+
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(strings.ReplaceAll(content, "\n", newline)), 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to replace config file: %w", err)
+	}
+
+	return nil
 }

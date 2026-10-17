@@ -196,6 +196,33 @@ func resolveContact(client *src.Client, userNames *src.SafeMap, userID int) stri
 	return key
 }
 
+func resolveChatTitle(client *src.Client, userNames *src.SafeMap, message src.Message) string {
+	chat := client.GetChat(message.ChatID)
+	if chat == nil {
+		if chats, err := client.GetChatInfo([]int{message.ChatID}); err == nil && len(chats) > 0 {
+			chat = &chats[0]
+		}
+	}
+
+	if chat != nil {
+		if strings.TrimSpace(chat.Title) != "" {
+			return chat.Title
+		}
+		me := client.GetMe()
+		for userID := range chat.Participants {
+			if me == nil || userID != me.ID {
+				return resolveContact(client, userNames, userID)
+			}
+		}
+	}
+
+	if message.SenderID != 0 {
+		return resolveContact(client, userNames, message.SenderID)
+	}
+
+	return fmt.Sprintf("MAX %d", message.ChatID)
+}
+
 func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSender, message src.Message, userNames *src.SafeMap, channelNames *src.SafeIntMap, cfg *src.Config) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -205,7 +232,15 @@ func ProcessMessage(client *src.Client, db *src.Database, sender *src.TelegramSe
 
 	route := sender.FindRoute(message.ChatID)
 	if route == nil {
-		return
+		if cfg.AutoTopicsChatID == 0 {
+			return
+		}
+		title := resolveChatTitle(client, userNames, message)
+		src.Logf("No route for MAX chat %d (%s), creating a new topic", message.ChatID, title)
+		if _, err := sender.CreateAutoRoute(message.ChatID, title); err != nil {
+			src.Logf("Failed to create topic for MAX chat %d: %v", message.ChatID, err)
+			return
+		}
 	}
 
 	if _, busy := processingMessages.LoadOrStore(message.ID, struct{}{}); busy {
@@ -705,6 +740,7 @@ func main() {
 	src.StartDownloadCleanup(cfg)
 
 	telegramSender := src.NewTelegramSender(cfg.TGToken, cfg.ChatRoutes, cfg)
+	telegramSender.CheckAutoTopicsChat()
 
 	userNames := src.NewSafeMap()
 	channelNames := src.NewSafeIntMap()
@@ -735,7 +771,7 @@ func main() {
 		if cfg.TGDebugUserID != 0 {
 			telegramSender.SendDebugMessage("Reconnected!", cfg.TGDebugUserID)
 		}
-		for _, route := range cfg.ChatRoutes {
+		for _, route := range telegramSender.GetRoutes() {
 			SyncChatHistory(client, db, telegramSender, userNames, channelNames, cfg, route.MaxChatID)
 		}
 	})
