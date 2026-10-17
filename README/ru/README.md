@@ -154,8 +154,8 @@ max2tg-windows-amd64.exe
 При успешном старте вы увидите:
 
 ```
-[16.04.2026 12:00:00] Starting max2tg 1.4.1...
-[16.04.2026 12:00:00] Application is up to date (1.4.1)
+[16.04.2026 12:00:00] Starting max2tg 1.4.2...
+[16.04.2026 12:00:00] Application is up to date (1.4.2)
 [16.04.2026 12:00:01] Connected to WebSocket
 [16.04.2026 12:00:01] Connected as Иван (ID: 12345678)
 ```
